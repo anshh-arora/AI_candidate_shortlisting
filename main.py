@@ -466,49 +466,102 @@ def create_fallback_score(candidate):
         'recommendation': 'CONSIDER'
     }
 
+def safe_convert_to_string(value):
+    """Safely convert any value to string, handling lists and dicts"""
+    if value is None:
+        return ""
+    elif isinstance(value, str):
+        return value
+    elif isinstance(value, list):
+        # Handle list of strings
+        if all(isinstance(item, str) for item in value):
+            return ", ".join(value)
+        # Handle list of dicts or mixed types
+        else:
+            result = []
+            for item in value:
+                if isinstance(item, dict):
+                    # Convert dict to readable string
+                    dict_str = "; ".join([f"{k}: {v}" for k, v in item.items() if v])
+                    result.append(dict_str)
+                else:
+                    result.append(str(item))
+            return " | ".join(result)
+    elif isinstance(value, dict):
+        # Convert dict to readable string
+        return "; ".join([f"{k}: {v}" for k, v in value.items() if v])
+    else:
+        return str(value)
+
 def convert_to_dataframe(resumes_data):
-    """Convert resume data to DataFrame"""
+    """Convert resume data to DataFrame with proper error handling"""
     if not resumes_data:
         return None
     
     # Create DataFrame
     df = pd.DataFrame(resumes_data)
     
-    # Process nested fields
+    # Process nested fields safely
     def extract_education(edu_list):
         if not edu_list or not isinstance(edu_list, list):
             return ""
-        return "; ".join([f"{e.get('Degree', '')} from {e.get('Institution', '')} ({e.get('Year', '')})" for e in edu_list if e])
+        result = []
+        for e in edu_list:
+            if isinstance(e, dict):
+                edu_str = f"{e.get('Degree', '')} from {e.get('Institution', '')} ({e.get('Year', '')})"
+                result.append(edu_str.strip())
+        return "; ".join([r for r in result if r])
     
     def extract_work_exp(exp_list):
         if not exp_list or not isinstance(exp_list, list):
             return ""
-        return "; ".join([f"{e.get('Position', '')} at {e.get('Company', '')} ({e.get('Duration', '')})" for e in exp_list if e])
+        result = []
+        for e in exp_list:
+            if isinstance(e, dict):
+                exp_str = f"{e.get('Position', '')} at {e.get('Company', '')} ({e.get('Duration', '')})"
+                result.append(exp_str.strip())
+        return "; ".join([r for r in result if r])
     
     def extract_skills(skills_list):
         if not skills_list or not isinstance(skills_list, list):
             return ""
         return ", ".join([str(skill) for skill in skills_list])
     
-    # Apply processing
-    if "Education" in df.columns:
-        df["Education_Summary"] = df["Education"].apply(extract_education)
-        df = df.drop(columns=["Education"])
-        
-    if "Work_Experience" in df.columns:
-        df["Work_Summary"] = df["Work_Experience"].apply(extract_work_exp)
-        df = df.drop(columns=["Work_Experience"])
-        
-    if "Skills" in df.columns:
-        df["Skills_List"] = df["Skills"].apply(extract_skills)
-        df = df.drop(columns=["Skills"])
+    def extract_projects(proj_list):
+        if not proj_list or not isinstance(proj_list, list):
+            return ""
+        result = []
+        for p in proj_list:
+            if isinstance(p, dict):
+                proj_str = f"{p.get('Title', '')} - {p.get('Description', '')}"
+                result.append(proj_str.strip())
+        return "; ".join([r for r in result if r])
     
-    # Convert any remaining list columns to strings
+    # Apply processing to nested fields
+    try:
+        if "Education" in df.columns:
+            df["Education_Summary"] = df["Education"].apply(extract_education)
+            df = df.drop(columns=["Education"])
+            
+        if "Work_Experience" in df.columns:
+            df["Work_Summary"] = df["Work_Experience"].apply(extract_work_exp)
+            df = df.drop(columns=["Work_Experience"])
+            
+        if "Skills" in df.columns:
+            df["Skills_List"] = df["Skills"].apply(extract_skills)
+            df = df.drop(columns=["Skills"])
+        
+        if "Projects" in df.columns:
+            df["Projects_Summary"] = df["Projects"].apply(extract_projects)
+            df = df.drop(columns=["Projects"])
+    
+    except Exception as e:
+        st.error(f"Error processing nested fields: {e}")
+    
+    # Convert any remaining complex columns to strings safely
     for col in df.columns:
         if df[col].dtype == 'object':
-            df[col] = df[col].apply(
-                lambda x: ", ".join(x) if isinstance(x, list) else str(x) if x is not None else ""
-            )
+            df[col] = df[col].apply(safe_convert_to_string)
     
     return df
 
@@ -536,7 +589,7 @@ def create_excel_report(scored_candidates, job_description):
                 "Phone": candidate_info.get("Phone", ""),
                 "Email": candidate_info.get("Email", ""),
                 "Location": candidate_info.get("Location", ""),
-                "Skills": ", ".join(candidate_info.get("Skills", [])),
+                "Skills": safe_convert_to_string(candidate_info.get("Skills", [])),
                 "Matching_Skills": ", ".join(match_details.get('skills', {}).get('matching_skills', [])),
                 "Missing_Skills": ", ".join(match_details.get('skills', {}).get('missing_skills', [])),
                 "Key_Strengths": ", ".join(candidate.get('key_strengths', [])),
@@ -968,10 +1021,7 @@ def main():
             
             with col3:
                 # Download complete Excel report
-                if 'job_description' in locals():
-                    excel_data = create_excel_report(st.session_state.top_candidates, job_description)
-                else:
-                    excel_data = create_excel_report(st.session_state.top_candidates, "Job Description Not Available")
+                excel_data = create_excel_report(st.session_state.top_candidates, job_description if 'job_description' in locals() else "Job Description Not Available")
                 
                 st.download_button(
                     "📈 Download Complete Excel Report",
@@ -986,731 +1036,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    ansharora@ip-192-168-1-13 Demo % streamlit run /Users/ansharora/Desktop/Demo/AI_candidate_shortlisting/main.py
-
-  You can now view your Streamlit app in your browser.
-
-  Local URL: http://localhost:8502
-  Network URL: http://192.168.1.13:8502
-
-
-=== EXTRACTED RESUME DATA FOR Naukri_AashishKaushik[3y_1m].docx ===
-{
-  "Name": "Aashish Kaushik",
-  "Phone": "+91 7017259411",
-  "Email": "ashishkaushik8126@gmail.com",
-  "Location": "",
-  "Links": [],
-  "Profile_Summary": "Full-Stack Developer with 3+ years of experience specializing in Node.js Backend development. Proven expertise in designing and implementing scalable, high-performance applications, managing RESTful & GraphQL APIs, and integrating real-time features using WebSockets (Socket.IO). Skilled in server deployment, configuration (Nginx, AWS), and database optimization (MongoDB, MySQL, Redis) to ensure efficient performance and reliability. Adept at building secure authentication systems (JWT, OAuth, RBAC) and optimizing system architecture for high availability and scalability.",
-  "Skills": [
-    "Node.js",
-    "Express.js",
-    "React.js",
-    "Next.js",
-    "RESTful APIs",
-    "GraphQL",
-    "WebSockets",
-    "Socket.IO",
-    "MongoDB",
-    "MySQL",
-    "Redis",
-    "Nginx",
-    "AWS",
-    "CI/CD",
-    "JWT",
-    "OAuth",
-    "RBAC",
-    "Git",
-    "GitHub",
-    "GitLab",
-    "EC2",
-    "S3",
-    "Lambda",
-    "Ubuntu",
-    "Docker",
-    "FileZilla",
-    "Postman",
-    "Microsoft Excel",
-    "Word",
-    "PowerPoint",
-    "Visual Studio Code"
-  ],
-  "Education": [
-    {
-      "Degree": "BCA",
-      "Institution": "Institute of Technology and Science, India",
-      "Year": "2021",
-      "Score": "",
-      "Type": "Degree"
-    },
-    {
-      "Degree": "Intermediate",
-      "Institution": "Muradnagar Public School (CBSE Board)",
-      "Year": "2018",
-      "Score": "",
-      "Type": "12th"
-    },
-    {
-      "Degree": "High School",
-      "Institution": "Muradnagar Public School (CBSE Board)",
-      "Year": "2016",
-      "Score": "",
-      "Type": "10th"
-    }
-  ],
-  "Certifications": [],
-  "Total_Experience": "3 years and 1 months",
-  "Work_Experience": [
-    {
-      "Position": "Backend Developer",
-      "Company": "Ashmar Technologies & Research Pvt Ltd. (AshmarIP)",
-      "Location": "Gurgaon, Haryana",
-      "Duration": "",
-      "Start_Date": "1/Feb/2022",
-      "End_Date": "Present",
-      "Responsibilities": [
-        "Full-Stack Development: Architected and maintained multiple applications using Node.js, React.js, and Next.js.",
-        "Backend API Development: Designed and implemented scalable RESTful APIs and GraphQL services for various applications.",
-        "Database Management: Optimized and implemented solutions with MongoDB, MySQL, and Redis for efficient data storage and retrieval.",
-        "Server Configuration & DevOps: Managed Nginx servers, deployed applications on AWS, and configured CI/CD pipelines for seamless deployments.",
-        "Authentication & Security: Implemented JWT, OAuth, and role-based access control (RBAC) to secure applications.",
-        "Performance Optimization: Enhanced application performance by optimizing queries, caching with Redis, and reducing load times.",
-        "Microservices & Scalable Architecture: Designed and developed microservices-based solutions to improve modularity and scalability.",
-        "Real-time Data Processing: Built WebSocket-based real-time applications for chat and live analytics.",
-        "Version Control: Managed codebase using Git and participated in scrum meetings.",
-        "Key Achievement: Successfully deployed and maintained production applications with 99.9% uptime and optimized backend performance."
-      ]
-    }
-  ],
-  "Projects": [],
-  "Additional_Information": "Father's name: Mr. Subodh Kaushik, Date of birth: 26th June, 2000, Nationality: Indian, Gender: Male, Language Known: English & Hindi"
-}
-============================================================
-
-=== EXTRACTED RESUME DATA FOR Naukri_AakashGautam[2y_1m].pdf ===
-{
-  "Name": "Aakash Gautam",
-  "Phone": "7011003920",
-  "Email": "gautamaakash786@gmail.com",
-  "Location": "New Delhi",
-  "Links": [
-    "linkedin.com/in/aakash-gautam-59521b172"
-  ],
-  "Profile_Summary": "Logical and results-driven developer with extensive experience in designing, developing, and implementing scalable applications and solutions using diverse technologies and programming languages. Passionate about creating efficient backend systems and scalable web applications. Seeking to leverage broad development expertise and hands-on technical skills in a challenging Backend Developer role.",
-  "Skills": [
-    "Node.js",
-    "Html",
-    "Express.js",
-    "CSS",
-    "MongoDB",
-    "JavaScript"
-  ],
-  "Education": [
-    {
-      "Degree": "Bachelor of Technology CSE",
-      "Institution": "Jamia Hamdard University",
-      "Year": "2020 \u2013 2023",
-      "Score": "",
-      "Type": "Degree"
-    },
-    {
-      "Degree": "Diploma of Higher Education CSE",
-      "Institution": "Lingaya's Vidyapeeth",
-      "Year": "2016 \u2013 2019",
-      "Score": "",
-      "Type": "Degree"
-    }
-  ],
-  "Certifications": [],
-  "Total_Experience": "2 years and 1 months",
-  "Work_Experience": [
-    {
-      "Position": "Nodejs Developer",
-      "Company": "Quy Technology Private Limited",
-      "Location": "Gurugram, India",
-      "Duration": "",
-      "Start_Date": "Feb 2024",
-      "End_Date": "Present",
-      "Responsibilities": [
-        "Purpose: A platform for users to pre-plan their death ceremony, including music, events, and other personalized details.",
-        "Implemented backend for managing user preferences and event planning.",
-        "Developed backend for connecting doctors and patients for facial and scar surgeries.",
-        "Developed APIs for scheduling, consultations, and communication.",
-        "Ensured data privacy and seamless user interactions with robust backend services.",
-        "Developed backend with user authentication, Google login, password management, and APIs for rideshare, transport, and meal service integration."
-      ]
-    },
-    {
-      "Position": "Node.js Developer",
-      "Company": "Parangat Technologies",
-      "Location": "Noida, India",
-      "Duration": "",
-      "Start_Date": "Feb 2023",
-      "End_Date": "Aug 2023",
-      "Responsibilities": [
-        "A management app for organizers, participants, and sponsors with features like speaker management, user interaction, and dynamic content."
-      ]
-    },
-    {
-      "Position": "Node.js Intern",
-      "Company": "Mobiloitte Technologies India Pvt.Ltd",
-      "Location": "New Delhi, India",
-      "Duration": "",
-      "Start_Date": "Aug 2022",
-      "End_Date": "Nov 2022",
-      "Responsibilities": []
-    }
-  ],
-  "Projects": [
-    {
-      "Title": "The Family Stone App",
-      "Duration": "",
-      "Description": "A platform for users to pre-plan their death ceremony, including music, events, and other personalized details.",
-      "Technologies": []
-    },
-    {
-      "Title": "Aesthetic Guru",
-      "Duration": "",
-      "Description": "Developed backend for connecting doctors and patients for facial and scar surgeries.",
-      "Technologies": []
-    },
-    {
-      "Title": "Cheesed App",
-      "Duration": "",
-      "Description": "Developed backend with user authentication, Google login, password management, and APIs for rideshare, transport, and meal service integration.",
-      "Technologies": []
-    },
-    {
-      "Title": "Event Plus App",
-      "Duration": "",
-      "Description": "A management app for organizers, participants, and sponsors with features like speaker management, user interaction, and dynamic content.",
-      "Technologies": []
-    }
-  ],
-  "Additional_Information": "Languages: English Hindi"
-}
-============================================================
-
-=== EXTRACTED RESUME DATA FOR Naukri_AashishKaushik[3y_1m].docx ===
-{
-  "Name": "Aashish Kaushik",
-  "Phone": "+91 7017259411",
-  "Email": "ashishkaushik8126@gmail.com",
-  "Location": "",
-  "Links": [],
-  "Profile_Summary": "Full-Stack Developer with 3+ years of experience specializing in Node.js Backend development. Proven expertise in designing and implementing scalable, high-performance applications, managing RESTful & GraphQL APIs, and integrating real-time features using WebSockets (Socket.IO). Skilled in server deployment, configuration (Nginx, AWS), and database optimization (MongoDB, MySQL, Redis) to ensure efficient performance and reliability. Adept at building secure authentication systems (JWT, OAuth, RBAC) and optimizing system architecture for high availability and scalability.",
-  "Skills": [
-    "Node.js",
-    "Express.js",
-    "React.js",
-    "Next.js",
-    "RESTful APIs",
-    "GraphQL",
-    "WebSockets",
-    "Socket.IO",
-    "MongoDB",
-    "MySQL",
-    "Redis",
-    "Nginx",
-    "AWS",
-    "CI/CD",
-    "JWT",
-    "OAuth",
-    "RBAC",
-    "Git",
-    "GitHub",
-    "GitLab",
-    "EC2",
-    "S3",
-    "Lambda",
-    "Ubuntu",
-    "Docker",
-    "FileZilla",
-    "Postman",
-    "Microsoft Excel",
-    "Word",
-    "PowerPoint",
-    "Visual Studio Code"
-  ],
-  "Education": [
-    {
-      "Degree": "BCA",
-      "Institution": "Institute of Technology and Science, India",
-      "Year": "2021",
-      "Score": "",
-      "Type": "Degree"
-    },
-    {
-      "Degree": "Intermediate",
-      "Institution": "Muradnagar Public School (CBSE Board)",
-      "Year": "2018",
-      "Score": "",
-      "Type": "12th"
-    },
-    {
-      "Degree": "High School",
-      "Institution": "Muradnagar Public School (CBSE Board)",
-      "Year": "2016",
-      "Score": "",
-      "Type": "10th"
-    }
-  ],
-  "Certifications": [],
-  "Total_Experience": "3 years and 1 months",
-  "Work_Experience": [
-    {
-      "Position": "Backend Developer",
-      "Company": "Ashmar Technologies & Research Pvt Ltd. (AshmarIP)",
-      "Location": "Gurgaon, Haryana",
-      "Duration": "",
-      "Start_Date": "1/Feb/2022",
-      "End_Date": "Present",
-      "Responsibilities": [
-        "Full-Stack Development: Architected and maintained multiple applications using Node.js, React.js, and Next.js.",
-        "Backend API Development: Designed and implemented scalable RESTful APIs and GraphQL services for various applications.",
-        "Database Management: Optimized and implemented solutions with MongoDB, MySQL, and Redis for efficient data storage and retrieval.",
-        "Server Configuration & DevOps: Managed Nginx servers, deployed applications on AWS, and configured CI/CD pipelines for seamless deployments.",
-        "Authentication & Security: Implemented JWT, OAuth, and role-based access control (RBAC) to secure applications.",
-        "Performance Optimization: Enhanced application performance by optimizing queries, caching with Redis, and reducing load times.",
-        "Microservices & Scalable Architecture: Designed and developed microservices-based solutions to improve modularity and scalability.",
-        "Real-time Data Processing: Built WebSocket-based real-time applications for chat and live analytics.",
-        "Version Control: Managed codebase using Git and participated in scrum meetings.",
-        "Key Achievement: Successfully deployed and maintained production applications with 99.9% uptime and optimized backend performance."
-      ]
-    }
-  ],
-  "Projects": [],
-  "Additional_Information": "Father's name: Mr. Subodh Kaushik, Date of birth: 26th June, 2000, Nationality: Indian, Gender: Male, Language Known: English & Hindi"
-}
-============================================================
-
-=== EXTRACTED RESUME DATA FOR Naukri_AkashMourya[2y_1m].pdf ===
-{
-  "Name": "AKASH MOURYA",
-  "Phone": "+91-9811667447",
-  "Email": "akmourya0024@gmail.com",
-  "Location": "Gurgaon",
-  "Links": [
-    "www.linkedin.com/in/akash-mourya-4ba8391b0"
-  ],
-  "Profile_Summary": "Results-driven Mern Stack Developer with 2.1 years of experience in designing, developing, and maintaining complex software solutions. Proficient in full-stack development, Node js, and React. Adept at collaborating in agile environments to deliver high-quality software products.",
-  "Skills": [
-    "JavaScript",
-    "TypeScript",
-    "Java",
-    "Node.js",
-    "Express.js",
-    "React Js",
-    "Docker",
-    "HTML",
-    "CSS",
-    "Tailwind CSS",
-    "Prisma Orm",
-    "MySQL",
-    "PostgreSQL",
-    "MongoDB",
-    "Git",
-    "GitHub"
-  ],
-  "Education": [
-    {
-      "Degree": "Bachelor of Computer Science",
-      "Institution": "Invertis University, Bareilly",
-      "Year": "Aug 2019 - June 2022",
-      "Score": "GRADE: 73%",
-      "Type": "Degree"
-    },
-    {
-      "Degree": "Class 12th",
-      "Institution": "Uk Board",
-      "Year": "Apr 2017 \u2013 May 2019",
-      "Score": "Percentage - 74%",
-      "Type": "12th"
-    },
-    {
-      "Degree": "Class 10th",
-      "Institution": "UK Board",
-      "Year": "Apr 2016 \u2013 May 2017",
-      "Score": "Percentage - 79%",
-      "Type": "10th"
-    }
-  ],
-  "Certifications": [
-    "ONDC Buyer App Certified Solutions Architect"
-  ],
-  "Total_Experience": "2 years and 1 months",
-  "Work_Experience": [
-    {
-      "Position": "Full Stack Developer",
-      "Company": "Cyber Expert",
-      "Location": "",
-      "Duration": "",
-      "Start_Date": "May 2023",
-      "End_Date": "Present",
-      "Responsibilities": [
-        "Developed and maintained scalable web applications using Node.js, React js And React native.",
-        "Integrated RESTful APIs and third-party services to enhance functionality",
-        "Inrergarted payment gateway and socket I.O for instant chat and messege."
-      ]
-    },
-    {
-      "Position": "Node.js Developer",
-      "Company": "RyientSoft Technologies",
-      "Location": "",
-      "Duration": "",
-      "Start_Date": "July 2022",
-      "End_Date": "Dec 2022",
-      "Responsibilities": [
-        "Developed and maintained scalable web applications using React and Node.js.",
-        "Integrated RESTful APIs and third-party services to enhance functionality.",
-        "Worked under a team of five developers to enhance my skills."
-      ]
-    }
-  ],
-  "Projects": [
-    {
-      "Title": "ONDC Protocol ISN model",
-      "Duration": "Aug-2024 - dec-2024",
-      "Description": "Designed and developed the frontend architecture for a ISN model for ONDC using react and material ui. Built and optimizedRESTful APIs forseamless communication with the frontend. Collaborated on creating a responsive frontend usingReact and Material-UI",
-      "Technologies": [
-        "React",
-        "Material UI",
-        "RESTful APIs"
-      ]
-    },
-    {
-      "Title": "Bill Book",
-      "Duration": "Feb 2024 - Apr 2024",
-      "Description": "Developed & designed a full-stack e-commerce platform usingReact, Node.js, and PostgreSQL. Designed a responsive UI with React and material UI. Ensured data persistence and user management with MongoDB and JWT.",
-      "Technologies": [
-        "React",
-        "Node.js",
-        "PostgreSQL",
-        "MongoDB",
-        "JWT",
-        "Material UI"
-      ]
-    },
-    {
-      "Title": "QuickQuizy",
-      "Duration": "Oct 2023 - Jan 2024",
-      "Description": "Integrate Payment Gateway SabPaisa.com. Built a real-time chat application using WebSocket. Implemented features including product listings, shopping cart, and user authentication. Deployed the application on AWS, enabling auto-scaling and load balancing.",
-      "Technologies": [
-        "WebSocket",
-        "AWS",
-        "SabPaisa.com"
-      ]
-    },
-    {
-      "Title": "Connecting Hearts",
-      "Duration": "July 2023 - Oct 2023",
-      "Description": "Developed a dating app platform using Node.js and PostgreSQL, ensuring efficient database management and server-side performance. Built a real-time chat application using WebSocket and Node.js. Integrate Payment Gateway razorPay. Integrated Firebase notification library to deliver real-time push notifications.",
-      "Technologies": [
-        "Node.js",
-        "PostgreSQL",
-        "WebSocket",
-        "razorPay",
-        "Firebase"
-      ]
-    }
-  ],
-  "Additional_Information": ""
-}
-============================================================
-
-=== EXTRACTED RESUME DATA FOR Naukri_AKSHAYSINGHRAWAL[5y_0m].pdf ===
-{
-  "Name": "AKSHAY RAWAL",
-  "Phone": "+91-8527-335393",
-  "Email": "rawalakshay508@gmail.com",
-  "Location": "New Delhi, India",
-  "Links": [
-    "linkedin.com/in/akshayrawal"
-  ],
-  "Profile_Summary": "",
-  "Skills": [
-    "JavaScript",
-    "Node.js",
-    "Angular",
-    "React",
-    "Express.js",
-    "MongoDB",
-    "MySQL",
-    "GitLab",
-    "Github",
-    "Git",
-    "Jenkins",
-    "Docker",
-    "Jira",
-    "Unity",
-    "C#",
-    "GraphQL",
-    "Redis",
-    "MQTT",
-    "IoT"
-  ],
-  "Education": [
-    {
-      "Degree": "BACHELOR OF COMPUTER SCIENCE AND IT",
-      "Institution": "DRONACHARYA COLLEGE OF ENGINEERING, GURUGRAM",
-      "Year": "2013 \u2013 2017",
-      "Score": "",
-      "Type": "Degree"
-    }
-  ],
-  "Certifications": [],
-  "Total_Experience": "5 years",
-  "Work_Experience": [
-    {
-      "Position": "SOFTWARE DEVELOPER",
-      "Company": "LIVPURE SMART HOMES PRIVATE LIMITED",
-      "Location": "GURUGRAM",
-      "Duration": "",
-      "Start_Date": "FEB'23",
-      "End_Date": "PRESENT",
-      "Responsibilities": [
-        "Revamped and developed scalable backend for Livpure Smart Application using Node.js, MongoDB, Redis, catering to the needs of over 10 Lakhs users in India (Used for Smart Water RO System Mobile App).",
-        "Developed Admin panel using Angular, Node.js and MongoDB for Support Team.",
-        "Proficient in Working with IoT Devices and MQTT Protocols.",
-        "Rewrote and Optimized Old Code for Enhanced Performance."
-      ]
-    },
-    {
-      "Position": "SOLUTION DEVELOPER",
-      "Company": "iTECH MISSION PRIVATE LIMITED",
-      "Location": "NEW DELHI",
-      "Duration": "",
-      "Start_Date": "APRIL'22",
-      "End_Date": "FEB'23",
-      "Responsibilities": [
-        "Designed and implemented web applications using MEAN/MERN/LAMP stack technologies.",
-        "Developed front-end interfaces using Angular and React, ensuring high performance and responsive design.",
-        "Developed backend services using Node.js / Express.js.",
-        "Managed databases using MongoDB and MySQL, and optimized database queries for improved performance.",
-        "Implemented GraphQL for API queries.",
-        "Utilized Git for version control and collaborated with cross-functional teams for seamless development."
-      ]
-    },
-    {
-      "Position": "C# UNITY/ NODE.js DEVELOPER",
-      "Company": "ALL FRIENDS STUDIO",
-      "Location": "GURUGRAM",
-      "Duration": "",
-      "Start_Date": "JULY'18",
-      "End_Date": "MARCH '21",
-      "Responsibilities": [
-        "Mobile games development in Unity game engine.",
-        "Developing backends for games using Node.js.",
-        "Source code management in a collaborative environment.",
-        "Unity Artificial intelligence and object pooling implementation.",
-        "Google firebase integration system for play store applications.",
-        "Unity and google ads implementation."
-      ]
-    }
-  ],
-  "Projects": [],
-  "Additional_Information": "INSTITUTION : Maharshi Dayanand University"
-}
-============================================================
-
-=== EXTRACTED RESUME DATA FOR Naukri_AmanBhaskar[1y_0m].pdf ===
-{
-  "Name": "AMAN BHASKAR",
-  "Phone": "+91 96678 04411",
-  "Email": "amanbhaskarwork@gmail.com",
-  "Location": "",
-  "Links": [
-    "/nednaman-bhaskar1",
-    "/gtbAmanBhaskar1",
-    "/sakagAmanB"
-  ],
-  "Profile_Summary": "",
-  "Skills": [
-    "JavaScript",
-    "TypeScript",
-    "React",
-    "React Native",
-    "Angular",
-    "NodeJS",
-    "ExpressJS",
-    "Java",
-    "SpringBoot",
-    "MongoDB",
-    "SQL",
-    "FireBase",
-    "Redux",
-    "Git",
-    "REST API"
-  ],
-  "Education": [
-    {
-      "Degree": "Bachelor of Technology, Electronics and Communication Engineering",
-      "Institution": "Indian Institute of Information Technology, Guwahati",
-      "Year": "Dec 2020 \u2013 May 2024",
-      "Score": "",
-      "Type": "Degree"
-    }
-  ],
-  "Certifications": [
-    "Code Camp : Backend Developement & APIs",
-    "GreatLearning : React",
-    "Infosys Springboard : Java"
-  ],
-  "Total_Experience": "1 years",
-  "Work_Experience": [
-    {
-      "Position": "Software Development Engineer",
-      "Company": "NAPTUNE Powertech Energy Services Private Limited",
-      "Location": "Remote",
-      "Duration": "Jan 2024 \u2013 Jan 2025",
-      "Start_Date": "Jan 2024",
-      "End_Date": "Jan 2025",
-      "Responsibilities": [
-        "Migrated an existing WordPress website to React, improving performance and scalability .",
-        "Implemented a comprehensive authentication system, including user signup, login, OAuth social login , email verification, and password management.",
-        "Developed a fully-featured full-stack admin panel for managing users and platform content, including user transactions and feedback features.",
-        "Implemented responsive design with React.js, leading to a 30% increase in mobile traffic."
-      ]
-    }
-  ],
-  "Projects": [
-    {
-      "Title": "AtmosAlert",
-      "Duration": "",
-      "Description": "Built a responsive Weather Application leveraging React for the frontend and Vite for fast development and build processes. Utilized the OpenWeatherMap API to fetch and display real-time weather data , including current conditions and forecasts . Integrated features such as city search ,geolocation-based weather retrieval , and unit conversion between Celsius and Fahrenheit. Implemented a feature where the user interface dynamically changes itsbackground gradient based on the current temperature , enhancing the visual experience by reflecting real-time weather conditions .",
-      "Technologies": [
-        "JavaScript",
-        "REST API",
-        "React"
-      ]
-    },
-    {
-      "Title": "PlanSpark",
-      "Duration": "",
-      "Description": "Designed a full-stack web application formanaging tasks , featuring user registration ,login , and task CRUD operations . Utilized Spring Boot to create RESTful services for handling user and task data , ensuring efficient and scalable backend operations . Configured and managed a PostgreSQL database forpersistent storage of user and task information, ensuring data integrity and security . Implemented authentication and authorization mechanisms using Spring Security to protect user data and application endpoints . Utilized Docker tocontainerize the application, facilitating easy deployment and scalability across different environments.",
-      "Technologies": [
-        "Spring Boot",
-        "Java",
-        "PostgreSQL",
-        "Docker",
-        "Thymeleaf"
-      ]
-    },
-    {
-      "Title": "BuyHive",
-      "Duration": "",
-      "Description": "Developed a scalable e-commerce platform using a microservices architecture , improving reliability and maintainability . Implemented secure payments with Razorpay for seamless transactions and a better user experience . Optimized performance with Node-Cache , reducing server load and improving response time. Built an admin dashboard with Chart.js foranalytics and inventory management .",
-      "Technologies": [
-        "NodeJS",
-        "React",
-        "MongoDB",
-        "TypeScript",
-        "Firebase"
-      ]
-    }
-  ],
-  "Additional_Information": ""
-}
-============================================================
-────────────────────────── Traceback (most recent call last) ───────────────────────────
-  /opt/homebrew/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/exec_code.  
-  py:121 in exec_func_with_error_handling                                               
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/script_run  
-  ner.py:640 in code_to_exec                                                            
-                                                                                        
-  /Users/ansharora/Desktop/Demo/AI_candidate_shortlisting/main.py:988 in <module>       
-                                                                                        
-    985 │   │   │   st.info("🎯 No candidates have been shortlisted yet. Please proces  
-    986                                                                                 
-    987 if __name__ == "__main__":                                                      
-  ❱ 988 │   main()                                                                      
-    989                                                                                 
-                                                                                        
-  /Users/ansharora/Desktop/Demo/AI_candidate_shortlisting/main.py:810 in main           
-                                                                                        
-    807 │   │                                                                           
-    808 │   │   if st.session_state.successful_resumes:                                 
-    809 │   │   │   # Create and display candidate DataFrame                            
-  ❱ 810 │   │   │   candidate_df = convert_to_dataframe(st.session_state.successful_re  
-    811 │   │   │   st.session_state.candidate_df = candidate_df                        
-    812 │   │   │                                                                       
-    813 │   │   │   if candidate_df is not None:                                        
-                                                                                        
-  /Users/ansharora/Desktop/Demo/AI_candidate_shortlisting/main.py:509 in                
-  convert_to_dataframe                                                                  
-                                                                                        
-    506 │   # Convert any remaining list columns to strings                             
-    507 │   for col in df.columns:                                                      
-    508 │   │   if df[col].dtype == 'object':                                           
-  ❱ 509 │   │   │   df[col] = df[col].apply(                                            
-    510 │   │   │   │   lambda x: ", ".join(x) if isinstance(x, list) else str(x) if x  
-    511 │   │   │   )                                                                   
-    512                                                                                 
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/pandas/core/series.py:4924 in apply        
-                                                                                        
-    4921 │   │   │   by_row=by_row,                                                     
-    4922 │   │   │   args=args,                                                         
-    4923 │   │   │   kwargs=kwargs,                                                     
-  ❱ 4924 │   │   ).apply()                                                              
-    4925 │                                                                              
-    4926 │   def _reindex_indexer(                                                      
-    4927 │   │   self,                                                                  
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/pandas/core/apply.py:1427 in apply         
-                                                                                        
-    1424 │   │   │   return self.apply_compat()                                         
-    1425 │   │                                                                          
-    1426 │   │   # self.func is Callable                                                
-  ❱ 1427 │   │   return self.apply_standard()                                           
-    1428 │                                                                              
-    1429 │   def agg(self):                                                             
-    1430 │   │   result = super().agg()                                                 
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/pandas/core/apply.py:1507 in               
-  apply_standard                                                                        
-                                                                                        
-    1504 │   │   # TODO: remove the `na_action="ignore"` when that default has been ch  
-    1505 │   │   #  Categorical (GH51645).                                              
-    1506 │   │   action = "ignore" if isinstance(obj.dtype, CategoricalDtype) else Non  
-  ❱ 1507 │   │   mapped = obj._map_values(                                              
-    1508 │   │   │   mapper=curried, na_action=action, convert=self.convert_dtype       
-    1509 │   │   )                                                                      
-    1510                                                                                
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/pandas/core/base.py:921 in _map_values     
-                                                                                        
-     918 │   │   if isinstance(arr, ExtensionArray):                                    
-     919 │   │   │   return arr.map(mapper, na_action=na_action)                        
-     920 │   │                                                                          
-  ❱  921 │   │   return algorithms.map_array(arr, mapper, na_action=na_action, convert  
-     922 │                                                                              
-     923 │   @final                                                                     
-     924 │   def value_counts(                                                          
-                                                                                        
-  /opt/homebrew/lib/python3.11/site-packages/pandas/core/algorithms.py:1743 in          
-  map_array                                                                             
-                                                                                        
-    1740 │   # we must convert to python types                                          
-    1741 │   values = arr.astype(object, copy=False)                                    
-    1742 │   if na_action is None:                                                      
-  ❱ 1743 │   │   return lib.map_infer(values, mapper, convert=convert)                  
-    1744 │   else:                                                                      
-    1745 │   │   return lib.map_infer_mask(                                             
-    1746 │   │   │   values, mapper, mask=isna(values).view(np.uint8), convert=convert  
-                                                                                        
-  in pandas._libs.lib.map_infer:2972                                                    
-                                                                                        
-  /Users/ansharora/Desktop/Demo/AI_candidate_shortlisting/main.py:510 in <lambda>       
-                                                                                        
-    507 │   for col in df.columns:                                                      
-    508 │   │   if df[col].dtype == 'object':                                           
-    509 │   │   │   df[col] = df[col].apply(                                            
-  ❱ 510 │   │   │   │   lambda x: ", ".join(x) if isinstance(x, list) else str(x) if x  
-    511 │   │   │   )                                                                   
-    512 │                                                                               
-    513 │   return df                                                                   
-────────────────────────────────────────────────────────────────────────────────────────
-TypeError: sequence item 0: expected str instance, dict found
