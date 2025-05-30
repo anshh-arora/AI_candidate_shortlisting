@@ -1650,7 +1650,7 @@ def main():
                 st.markdown(f"""
                 <div class="metric-card">
                     <h3 style="color: #f59e0b; margin: 0;">📈 {hig_score:.1f}%</h3>
-                    <p style="margin: 0; color: #6c757d;">Average Score</p>
+                    <p style="margin: 0; color: #6c757d;">High Score</p>
                 </div>
                 """, unsafe_allow_html=True)
             
