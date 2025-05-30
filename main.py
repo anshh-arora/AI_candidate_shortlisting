@@ -13,14 +13,24 @@ from tqdm import tqdm
 import anthropic
 from dotenv import load_dotenv
 import time
+import hashlib
+import hmac
 
 # Load environment variables
 load_dotenv()
 
+# Define valid users - using environment variables with fallbacks
+VALID_USERS = {
+    "smartworks_admin": os.getenv("SMARTWORKS_ADMIN_PASSWORD") or st.secrets.get("SMARTWORKS_ADMIN_PASSWORD", "sw2025!"),
+    "client_manager": os.getenv("CLIENT_MANAGER_PASSWORD") or st.secrets.get("CLIENT_MANAGER_PASSWORD", "cm2024!"),
+    "operations": os.getenv("OPERATIONS_PASSWORD") or st.secrets.get("OPERATIONS_PASSWORD", "ops2024!"),
+    "ansh.arora1@sworks.co.in": os.getenv("ANSH_PASSWORD") or st.secrets.get("ANSH_PASSWORD", "ansh1529")
+}
+
 # Initialize Claude API client
 @st.cache_resource
 def init_claude_client():
-    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", None)
     if not api_key:
         st.error("Please set your ANTHROPIC_API_KEY in the environment variables or Streamlit secrets")
         st.stop()
@@ -28,7 +38,7 @@ def init_claude_client():
 
 # Initialize session state
 def init_session_state():
-    """Initialize session state variables"""
+    """Initialize session state variables with authentication"""
     default_values = {
         'successful_resumes': [],
         'failed_resumes': [],
@@ -46,7 +56,9 @@ def init_session_state():
             "skills": 0.40,
             "education": 0.20,
             "certification": 0.10
-        }
+        },
+        'password_correct': False,
+        'authenticated_user': None
     }
     
     for key, value in default_values.items():
@@ -619,15 +631,114 @@ def create_excel_report(scored_candidates, job_description):
     
     return output.getvalue()
 
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        username = st.session_state["username"].strip().lower()
+        password = st.session_state["password"]
+        
+        # Check if username exists and password matches
+        if username in VALID_USERS and VALID_USERS[username] == password:
+            st.session_state["password_correct"] = True
+            st.session_state["authenticated_user"] = username
+            del st.session_state["password"]  # Don't store password
+            del st.session_state["username"]  # Don't store username
+        else:
+            st.session_state["password_correct"] = False
+
+    # Return True if password is validated
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Show login form
+    st.markdown("""
+    <div style="max-width: 400px; margin: 50px auto; padding: 2rem; 
+                background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <h2 style="text-align: center; color: #333; margin-bottom: 2rem;">
+            🔐 SmartWorks Login
+        </h2>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.text_input(
+            "👤 Username", 
+            key="username", 
+            placeholder="Enter your username",
+            help="Use: smartworks_admin, client_manager, operations, or ansh.arora1@sworks.co.in"
+        )
+        st.text_input(
+            "🔑 Password", 
+            type="password", 
+            key="password",
+            placeholder="Enter your password"
+        )
+        
+        if st.button("🚀 Login", use_container_width=True, type="primary"):
+            password_entered()
+        
+        # Show error message if login failed
+        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+            st.error("❌ Invalid username or password")
+        
+        # Add some styling
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; color: #666;">
+            <small>Access restricted to authorized SmartWorks personnel only</small>
+        </div>
+        """, unsafe_allow_html=True)
+
+    return False
+
+def get_user_role(username):
+    """Get user role based on username"""
+    role_mapping = {
+        "smartworks_admin": "Admin",
+        "client_manager": "Client Manager", 
+        "operations": "Operations",
+        "ansh.arora1@sworks.co.in": "Developer"
+    }
+    return role_mapping.get(username, "User")
+
+def show_user_info():
+    """Display logged in user info in sidebar"""
+    if "authenticated_user" in st.session_state:
+        username = st.session_state["authenticated_user"]
+        role = get_user_role(username)
+        
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 👤 User Info")
+        st.sidebar.write(f"**User:** {username}")
+        st.sidebar.write(f"**Role:** {role}")
+        
+        if st.sidebar.button("🚪 Logout"):
+            # Clear all session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
 # Streamlit UI
 def main():
     st.set_page_config(
-        page_title="Resume Shortlisting Tool",
+        page_title="SmartWorks Resume Shortlisting Tool",
         page_icon="🎯",
         layout="wide"
     )
     
-    # Custom CSS
+    # Initialize session state
+    init_session_state()
+    
+    # Check authentication FIRST
+    if not check_password():
+        st.stop()
+    
+    # If authenticated, proceed with the app
+    
+    # Custom CSS (keep your existing CSS)
     st.markdown("""
     <style>
     .main-header {
@@ -722,17 +833,19 @@ def main():
     # Main header
     st.markdown("""
     <div class="main-header">
-        <h1>🎯 AI Resume Shortlisting Tool</h1>
+        <h1>🎯 SmartWorks AI Resume Shortlisting Tool</h1>
         <p>Intelligent candidate screening powered by AI</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Initialize
-    init_session_state()
+    # Initialize Claude client
     client = init_claude_client()
     
     # Sidebar for configuration
     with st.sidebar:
+        # Show user info
+        show_user_info()
+        
         st.markdown("### ⚙️ Scoring Configuration")
         
         st.markdown("**Adjust importance of each criteria:**")
@@ -754,7 +867,7 @@ def main():
         st.markdown("**Current Weights:**")
         for key, value in st.session_state.weights.items():
             st.write(f"• {key.title()}: {value:.1%}")
-    
+
     # Create tabs
     tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
     
