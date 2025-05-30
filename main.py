@@ -1051,9 +1051,9 @@ def main():
     
     .upload-section {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        padding: 2rem;
+        padding: 0rem;
         border-radius: 15px;
-        margin-bottom: 1.5rem;
+        margin-bottom: 0rem;
         border: 1px solid #dee2e6;
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
