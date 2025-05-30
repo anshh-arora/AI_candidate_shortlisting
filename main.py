@@ -9,12 +9,12 @@ import tempfile
 from datetime import datetime
 from io import BytesIO
 import numpy as np
-from tqdm import tqdm
 import anthropic
 from dotenv import load_dotenv
 import time
 import hashlib
 import hmac
+import traceback
 
 # Load environment variables
 load_dotenv()
@@ -42,6 +42,7 @@ def init_session_state():
     default_values = {
         'successful_resumes': [],
         'failed_resumes': [],
+        'failed_resume_details': [],  # New: Store detailed failure reasons
         'candidate_df': None,
         'shortlisted_df': None,
         'job_requirements': None,
@@ -58,7 +59,8 @@ def init_session_state():
             "certification": 0.10
         },
         'password_correct': False,
-        'authenticated_user': None
+        'authenticated_user': None,
+        'processing_complete': False  # New: Track if processing is complete
     }
     
     for key, value in default_values.items():
@@ -67,47 +69,91 @@ def init_session_state():
 
 # Text extraction functions
 def extract_text_from_pdf(pdf_file):
-    """Extract text from PDF file"""
+    """Extract text from PDF file with detailed error handling"""
     text = ""
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
+        print(f"📄 PDF has {len(pdf_reader.pages)} pages")
+        
         for page_num in range(len(pdf_reader.pages)):
-            page = pdf_reader.pages[page_num]
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+            try:
+                page = pdf_reader.pages[page_num]
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+                    print(f"✅ Extracted text from page {page_num + 1}: {len(page_text)} characters")
+                else:
+                    print(f"⚠️ No text found on page {page_num + 1}")
+            except Exception as page_error:
+                print(f"❌ Error extracting page {page_num + 1}: {str(page_error)}")
+                continue
+                
+        if not text.strip():
+            raise Exception("No text could be extracted from any page")
+            
+        print(f"✅ Total extracted text: {len(text)} characters")
+        return text
+        
     except Exception as e:
-        st.error(f"PDF extraction failed: {str(e)}")
-    return text
+        error_msg = f"PDF extraction failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        raise Exception(error_msg)
 
 def extract_text_from_docx(docx_file):
-    """Extract text from DOCX file"""
+    """Extract text from DOCX file with detailed error handling"""
     text = ""
     try:
         doc = docx.Document(docx_file)
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
         
+        # Extract from paragraphs
+        paragraph_count = 0
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip():
+                text += paragraph.text + "\n"
+                paragraph_count += 1
+        
+        print(f"📝 Extracted text from {paragraph_count} paragraphs")
+        
+        # Extract from tables
+        table_count = 0
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    text += cell.text + " "
+                    if cell.text.strip():
+                        text += cell.text + " "
                 text += "\n"
+            table_count += 1
+            
+        print(f"📊 Extracted text from {table_count} tables")
+        
+        if not text.strip():
+            raise Exception("No text content found in document")
+            
+        print(f"✅ Total extracted text: {len(text)} characters")
+        return text
+        
     except Exception as e:
-        st.error(f"DOCX extraction failed: {str(e)}")
-    return text
+        error_msg = f"DOCX extraction failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        raise Exception(error_msg)
 
 def extract_text_from_file(uploaded_file):
-    """Extract text based on file type"""
+    """Extract text based on file type with detailed error handling"""
     file_ext = uploaded_file.name.lower().split('.')[-1]
+    print(f"\n🔍 Processing file: {uploaded_file.name} (Type: {file_ext.upper()})")
     
-    if file_ext == "pdf":
-        return extract_text_from_pdf(uploaded_file)
-    elif file_ext in ["docx", "doc"]:
-        return extract_text_from_docx(uploaded_file)
-    else:
-        st.error(f"Unsupported file type: {file_ext}")
-        return ""
+    try:
+        if file_ext == "pdf":
+            return extract_text_from_pdf(uploaded_file)
+        elif file_ext in ["docx", "doc"]:
+            return extract_text_from_docx(uploaded_file)
+        else:
+            error_msg = f"Unsupported file type: {file_ext}"
+            print(f"❌ {error_msg}")
+            raise Exception(error_msg)
+    except Exception as e:
+        print(f"❌ File extraction failed for {uploaded_file.name}: {str(e)}")
+        raise
 
 # Claude API functions
 def get_resume_extraction_prompt(resume_text, filename_experience=None):
@@ -286,8 +332,9 @@ Score each category from 0-100 based on relevance and quality of match. Be speci
     return prompt
 
 def call_claude_api(client, prompt, max_tokens=3000):
-    """Call Claude API with error handling"""
+    """Call Claude API with detailed error handling"""
     try:
+        print("🤖 Calling Claude API...")
         response = client.messages.create(
             model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
             max_tokens=max_tokens,
@@ -295,27 +342,43 @@ def call_claude_api(client, prompt, max_tokens=3000):
                 {"role": "user", "content": prompt}
             ]
         )
+        print("✅ Claude API call successful")
         return response.content[0].text
     except Exception as e:
-        st.error(f"Claude API error: {str(e)}")
+        error_msg = f"Claude API error: {str(e)}"
+        print(f"❌ {error_msg}")
         return None
 
-def parse_json_response(response_text):
-    """Parse JSON from Claude response with error handling"""
+def parse_json_response(response_text, filename=""):
+    """Parse JSON from Claude response with detailed error handling"""
     try:
+        print(f"📝 Parsing JSON response for {filename}...")
         # Try to parse directly first
-        return json.loads(response_text)
-    except json.JSONDecodeError:
+        result = json.loads(response_text)
+        print("✅ JSON parsing successful")
+        return result
+    except json.JSONDecodeError as json_error:
+        print(f"⚠️ Direct JSON parsing failed: {str(json_error)}")
+        
         # Try to extract JSON from response if it has extra text
         try:
+            print("🔍 Attempting to extract JSON from response...")
             # Look for JSON block
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
-        except:
-            pass
+                result = json.loads(json_match.group())
+                print("✅ JSON extraction successful")
+                return result
+            else:
+                print("❌ No JSON structure found in response")
+        except Exception as extraction_error:
+            print(f"❌ JSON extraction failed: {str(extraction_error)}")
+        
+        # Log the raw response for debugging
+        print(f"🔍 Raw response content:\n{response_text[:500]}...")
         
         # Return fallback structure
+        print("⚠️ Returning fallback JSON structure")
         return {
             "Name": "Unknown",
             "Phone": "",
@@ -333,54 +396,122 @@ def parse_json_response(response_text):
         }
 
 def process_resume_batch(uploaded_files, client):
-    """Process uploaded resumes in batches"""
+    """Process uploaded resumes in batches with detailed error logging"""
     successful_resumes = []
     failed_resumes = []
+    failed_resume_details = []
+    
+    print(f"\n🚀 Starting batch processing of {len(uploaded_files)} files")
+    print("=" * 80)
     
     # Create progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     for i, uploaded_file in enumerate(uploaded_files):
+        print(f"\n📁 Processing file {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
         status_text.text(f"Extracting data from {uploaded_file.name}...")
         progress_bar.progress((i + 1) / len(uploaded_files))
         
+        failure_reason = ""
+        
         try:
             # Extract text from file
+            print("📄 Starting text extraction...")
             text = extract_text_from_file(uploaded_file)
+            
             if not text.strip():
+                failure_reason = "No text content extracted from file"
+                print(f"❌ {failure_reason}")
                 failed_resumes.append(uploaded_file.name)
+                failed_resume_details.append({
+                    "filename": uploaded_file.name,
+                    "stage": "Text Extraction",
+                    "reason": failure_reason,
+                    "details": "File appears to be empty or contains no readable text"
+                })
                 continue
+            
+            print(f"✅ Text extraction successful. Length: {len(text)} characters")
             
             # Extract experience from filename if available
             experience = extract_experience_from_filename(uploaded_file.name)
+            if experience:
+                print(f"📅 Experience from filename: {experience}")
             
             # Generate prompt
+            print("🔧 Generating extraction prompt...")
             prompt = get_resume_extraction_prompt(text, experience)
             
             # Call Claude API
+            print("🤖 Calling Claude API for data extraction...")
             response = call_claude_api(client, prompt)
+            
             if not response:
+                failure_reason = "Claude API call failed"
+                print(f"❌ {failure_reason}")
                 failed_resumes.append(uploaded_file.name)
+                failed_resume_details.append({
+                    "filename": uploaded_file.name,
+                    "stage": "API Call",
+                    "reason": failure_reason,
+                    "details": "No response received from Claude API"
+                })
                 continue
             
-            # Parse JSON response
-            candidate_data = parse_json_response(response)
+            print("✅ Claude API response received")
             
-            # Print to terminal for debugging
-            print(f"\n=== EXTRACTED RESUME DATA FOR {uploaded_file.name} ===")
-            print(json.dumps(candidate_data, indent=2))
-            print("=" * 60)
+            # Parse JSON response
+            print("📝 Parsing JSON response...")
+            candidate_data = parse_json_response(response, uploaded_file.name)
+            
+            # Validate essential fields
+            if not candidate_data.get("Name") or candidate_data.get("Name") == "Unknown":
+                failure_reason = "No candidate name found in extracted data"
+                print(f"⚠️ {failure_reason}")
+                # Still process but add warning
             
             # Add metadata
             candidate_data["Source_File"] = uploaded_file.name
             candidate_data["Extraction_Date"] = datetime.now().strftime("%Y-%m-%d")
             
+            # Print extracted data for debugging
+            print(f"\n=== EXTRACTED RESUME DATA FOR {uploaded_file.name} ===")
+            print(f"Name: {candidate_data.get('Name', 'N/A')}")
+            print(f"Email: {candidate_data.get('Email', 'N/A')}")
+            print(f"Phone: {candidate_data.get('Phone', 'N/A')}")
+            print(f"Experience: {candidate_data.get('Total_Experience', 'N/A')}")
+            print(f"Skills Count: {len(candidate_data.get('Skills', []))}")
+            print(f"Education Records: {len(candidate_data.get('Education', []))}")
+            print("=" * 60)
+            
             successful_resumes.append(candidate_data)
+            print(f"✅ Successfully processed {uploaded_file.name}")
             
         except Exception as e:
-            st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+            failure_reason = f"Unexpected error: {str(e)}"
+            print(f"❌ Error processing {uploaded_file.name}: {failure_reason}")
+            print(f"📍 Traceback: {traceback.format_exc()}")
+            
             failed_resumes.append(uploaded_file.name)
+            failed_resume_details.append({
+                "filename": uploaded_file.name,
+                "stage": "Processing",
+                "reason": failure_reason,
+                "details": str(e)
+            })
+    
+    # Store detailed failure information in session state
+    st.session_state.failed_resume_details = failed_resume_details
+    
+    print(f"\n🎉 Batch processing completed!")
+    print(f"✅ Successful: {len(successful_resumes)}")
+    print(f"❌ Failed: {len(failed_resumes)}")
+    
+    if failed_resumes:
+        print(f"\n📝 Failed files summary:")
+        for detail in failed_resume_details:
+            print(f"❌ {detail['filename']}: {detail['reason']}")
     
     status_text.text("Data extraction completed!")
     return successful_resumes, failed_resumes
@@ -409,6 +540,8 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
     """Score candidates in batches against job description"""
     scored_candidates = []
     
+    print(f"\n🎯 Starting candidate scoring for {len(candidates)} candidates")
+    
     # Create batches
     batches = [candidates[i:i + batch_size] for i in range(0, len(candidates), batch_size)]
     
@@ -417,16 +550,20 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
     batch_status = st.empty()
     
     for batch_idx, batch in enumerate(batches):
+        print(f"\n📊 Processing batch {batch_idx + 1}/{total_batches}")
         batch_status.text(f"Analyzing batch {batch_idx + 1} of {total_batches} against job requirements...")
         batch_progress.progress((batch_idx + 1) / total_batches)
         
         for candidate in batch:
+            candidate_name = candidate.get('Name', 'Unknown')
+            print(f"🔍 Scoring candidate: {candidate_name}")
+            
             try:
                 prompt = get_candidate_scoring_prompt(job_description, candidate, weights, additional_preferences)
                 response = call_claude_api(client, prompt, max_tokens=2000)
                 
                 if response:
-                    match_data = parse_json_response(response)
+                    match_data = parse_json_response(response, candidate_name)
                     
                     if "candidate_match" in match_data:
                         candidate_match = match_data["candidate_match"]
@@ -442,14 +579,16 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
                         }
                         
                         scored_candidates.append(candidate_record)
+                        print(f"✅ Scored {candidate_name}: {candidate_record['overall_score']:.1f}%")
                     else:
-                        # Fallback scoring
+                        print(f"⚠️ Invalid response structure for {candidate_name}, using fallback")
                         scored_candidates.append(create_fallback_score(candidate))
                 else:
+                    print(f"❌ No API response for {candidate_name}, using fallback")
                     scored_candidates.append(create_fallback_score(candidate))
                     
             except Exception as e:
-                st.error(f"Error scoring candidate {candidate.get('Name', 'Unknown')}: {str(e)}")
+                print(f"❌ Error scoring {candidate_name}: {str(e)}")
                 scored_candidates.append(create_fallback_score(candidate))
         
         # Small delay between batches to avoid rate limiting
@@ -459,6 +598,8 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
     
     # Sort by score
     scored_candidates.sort(key=lambda x: x['overall_score'], reverse=True)
+    print(f"🏆 Scoring completed. Top candidate: {scored_candidates[0]['candidate_data'].get('Name', 'Unknown')} ({scored_candidates[0]['overall_score']:.1f}%)")
+    
     return scored_candidates
 
 def create_fallback_score(candidate):
@@ -647,6 +788,7 @@ def check_password():
             del st.session_state["username"]  # Don't store username
         else:
             st.session_state["password_correct"] = False
+            st.session_state["login_attempted"] = True  # Track that login was attempted
 
     # Return True if password is validated
     if st.session_state.get("password_correct", False):
@@ -681,8 +823,9 @@ def check_password():
         if st.button("🚀 Login", use_container_width=True, type="primary"):
             password_entered()
         
-        # Show error message if login failed
-        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        # Show error message ONLY if login was attempted and failed
+        if (st.session_state.get("login_attempted", False) and 
+            not st.session_state.get("password_correct", False)):
             st.error("❌ Invalid username or password")
         
         # Add some styling
@@ -721,6 +864,46 @@ def show_user_info():
                 del st.session_state[key]
             st.rerun()
 
+def show_failed_resumes():
+    """Display detailed information about failed resumes"""
+    if st.session_state.failed_resume_details:
+        st.markdown("### ❌ Failed Resume Analysis")
+        
+        # Create a DataFrame for failed resumes
+        failed_df = pd.DataFrame(st.session_state.failed_resume_details)
+        
+        # Show summary
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Failed", len(failed_df))
+        with col2:
+            text_extraction_fails = len(failed_df[failed_df['stage'] == 'Text Extraction'])
+            st.metric("Text Extraction Failures", text_extraction_fails)
+        with col3:
+            api_fails = len(failed_df[failed_df['stage'] == 'API Call'])
+            st.metric("API Call Failures", api_fails)
+        
+        # Show detailed table
+        st.dataframe(
+            failed_df[['filename', 'stage', 'reason', 'details']], 
+            use_container_width=True,
+            column_config={
+                "filename": "File Name",
+                "stage": "Failure Stage", 
+                "reason": "Reason",
+                "details": "Details"
+            }
+        )
+        
+        # Download failed resumes report
+        csv_data = failed_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download Failed Resumes Report",
+            data=csv_data,
+            file_name=f"failed_resumes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+
 # Streamlit UI
 def main():
     st.set_page_config(
@@ -738,7 +921,8 @@ def main():
     
     # If authenticated, proceed with the app
     
-    # Custom CSS (keep your existing CSS)
+    # Custom CSS
+    # Custom CSS - Replace the existing st.markdown CSS section with this
     st.markdown("""
     <style>
     .main-header {
@@ -827,6 +1011,73 @@ def main():
     .score-good { background-color: #cce7ff; color: #004085; }
     .score-average { background-color: #fff3cd; color: #856404; }
     .score-poor { background-color: #f8d7da; color: #721c24; }
+    
+    /* Enhanced Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #f0f2f6;
+        padding: 8px;
+        border-radius: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 60px;
+        white-space: pre-wrap;
+        background-color: #ffffff;
+        border: 2px solid #e1e5eb;
+        border-radius: 12px;
+        gap: 8px;
+        padding-left: 24px;
+        padding-right: 24px;
+        font-weight: 600;
+        font-size: 16px;
+        color: #495057;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #f8f9fa;
+        border-color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+        border-color: #667eea;
+        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.3);
+        transform: translateY(-3px);
+    }
+    
+    .stTabs [aria-selected="true"]:hover {
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+        transform: translateY(-3px);
+    }
+    
+    /* Tab Panel Styling */
+    .stTabs [data-baseweb="tab-panel"] {
+        padding-top: 20px;
+    }
+    
+    /* Custom Tab Colors for Different Tabs */
+    .stTabs [data-baseweb="tab"]:nth-child(1)[aria-selected="true"] {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(2)[aria-selected="true"] {
+        background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(3)[aria-selected="true"] {
+        background: linear-gradient(135deg, #dc2626 0%, #ea580c 100%);
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(4)[aria-selected="true"] {
+        background: linear-gradient(135deg, #7c2d12 0%, #dc2626 100%);
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -868,8 +1119,11 @@ def main():
         for key, value in st.session_state.weights.items():
             st.write(f"• {key.title()}: {value:.1%}")
 
-    # Create tabs
-    tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
+    # Create tabs with improved handling
+    if st.session_state.processing_complete:
+        tab1, tab2, tab3, tab4 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates", "❌ Failed Resumes"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
     
     with tab1:
         st.markdown("### 📄 Upload Resume Files")
@@ -919,6 +1173,9 @@ def main():
             elif not job_description:
                 st.error("❌ Please enter a job description")
             else:
+                # Clear previous results
+                st.session_state.processing_complete = False
+                
                 st.markdown("### ⚡ Processing Results")
                 
                 # Step 1: Extract candidate information
@@ -936,6 +1193,11 @@ def main():
                 col2.metric("✅ Processed", len(successful_resumes))
                 col3.metric("❌ Failed", len(failed_resumes))
                 
+                # Show failed files summary if any
+                if failed_resumes:
+                    with st.expander(f"❌ View {len(failed_resumes)} Failed Files", expanded=False):
+                        show_failed_resumes()
+                
                 if successful_resumes:
                     # Step 2: Score candidates
                     st.markdown("**🎯 Scoring Candidates**")
@@ -949,6 +1211,7 @@ def main():
                     
                     st.session_state.top_candidates = scored_candidates
                     st.session_state.current_job_title = job_title or "Position"
+                    st.session_state.processing_complete = True
                     
                     # Show scoring results
                     if scored_candidates:
@@ -963,6 +1226,9 @@ def main():
                         
                         st.success("✅ Processing completed successfully!")
                         st.info("📋 Check the 'Candidate Details' and 'Shortlisted Candidates' tabs for results")
+                        
+                        # Automatically refresh to show new tab
+                        st.rerun()
                     else:
                         st.error("❌ No candidates could be scored. Please check your files and try again.")
                 else:
@@ -993,7 +1259,8 @@ def main():
                         data=excel_buffer.getvalue(),
                         file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        use_container_width=True,
+                        key="candidates_excel_download"
                     )
                 
                 with col2:
@@ -1004,7 +1271,8 @@ def main():
                         data=json_data,
                         file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                         mime="application/json",
-                        use_container_width=True
+                        use_container_width=True,
+                        key="candidates_json_download"
                     )
         else:
             st.info("📝 No candidate data available. Please process some resumes first.")
@@ -1118,7 +1386,8 @@ def main():
                     data=csv_data,
                     file_name=f"shortlisted_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="all_candidates_csv_download"
                 )
             
             with col2:
@@ -1129,7 +1398,8 @@ def main():
                     data=top_5_csv,
                     file_name=f"top_5_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="top_5_csv_download"
                 )
             
             with col3:
@@ -1141,11 +1411,17 @@ def main():
                     data=excel_data,
                     file_name=f"complete_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="complete_excel_report_download"
                 )
         
         else:
             st.info("🎯 No candidates have been shortlisted yet. Please process some resumes first.")
+    
+    # Show failed resumes tab only if processing is complete and there are failures
+    if st.session_state.processing_complete and st.session_state.failed_resume_details:
+        with tab4:
+            show_failed_resumes()
 
 if __name__ == "__main__":
     main()
