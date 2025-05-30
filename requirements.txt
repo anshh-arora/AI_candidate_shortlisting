@@ -5,7 +5,4 @@ python-docx
 openpyxl
 anthropic
 python-dotenv
-tqdm
 numpy
-hashlib
-hmac
