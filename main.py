@@ -42,7 +42,7 @@ def init_session_state():
     default_values = {
         'successful_resumes': [],
         'failed_resumes': [],
-        'failed_resume_details': [],  # New: Store detailed failure reasons
+        'failed_resume_details': [],
         'candidate_df': None,
         'shortlisted_df': None,
         'job_requirements': None,
@@ -60,7 +60,7 @@ def init_session_state():
         },
         'password_correct': False,
         'authenticated_user': None,
-        'processing_complete': False  # New: Track if processing is complete
+        'processing_complete': False
     }
     
     for key, value in default_values.items():
@@ -904,6 +904,123 @@ def show_failed_resumes():
             mime="text/csv"
         )
 
+def configure_scoring_weights():
+    """Simple weight configuration where user can set multiple weights and apply together"""
+    st.markdown("### ⚙️ Scoring Configuration")
+    
+    # Show current weights
+    st.markdown("**Current Active Weights:**")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🎯 Experience", f"{st.session_state.weights['experience']:.0%}")
+    with col2:
+        st.metric("🛠️ Skills", f"{st.session_state.weights['skills']:.0%}")
+    with col3:
+        st.metric("🎓 Education", f"{st.session_state.weights['education']:.0%}")
+    with col4:
+        st.metric("📜 Certifications", f"{st.session_state.weights['certification']:.0%}")
+    
+    # Quick preset buttons
+    st.markdown("---")
+    st.markdown("**⚡ Quick Presets:**")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("💼 Experience Focus", use_container_width=True, help="50% Experience, 30% Skills, 15% Education, 5% Certifications"):
+            st.session_state.weights = {"experience": 0.50, "skills": 0.30, "education": 0.15, "certification": 0.05}
+    
+    with col2:
+        if st.button("🛠️ Skills Focus", use_container_width=True, help="20% Experience, 60% Skills, 15% Education, 5% Certifications"):
+            st.session_state.weights = {"experience": 0.20, "skills": 0.60, "education": 0.15, "certification": 0.05}
+    
+    with col3:
+        if st.button("⚖️ Balanced", use_container_width=True, help="30% Experience, 40% Skills, 20% Education, 10% Certifications"):
+            st.session_state.weights = {"experience": 0.30, "skills": 0.40, "education": 0.20, "certification": 0.10}
+    
+    st.markdown("---")
+    
+    # Manual weight adjustment
+    st.markdown("**🎚️ Set Custom Weights:**")
+    st.markdown("*Set each weight percentage - they will be normalized to 100% when you apply*")
+    
+    # Create input fields for weights
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        exp_weight = st.number_input(
+            "🎯 Experience (%)",
+            min_value=0,
+            max_value=100,
+            value=int(st.session_state.weights['experience'] * 100),
+            step=5,
+            help="Set weight for work experience"
+        )
+        
+        skills_weight = st.number_input(
+            "🛠️ Skills (%)",
+            min_value=0,
+            max_value=100,
+            value=int(st.session_state.weights['skills'] * 100),
+            step=5,
+            help="Set weight for technical and soft skills"
+        )
+    
+    with col2:
+        edu_weight = st.number_input(
+            "🎓 Education (%)",
+            min_value=0,
+            max_value=100,
+            value=int(st.session_state.weights['education'] * 100),
+            step=5,
+            help="Set weight for educational background"
+        )
+        
+        cert_weight = st.number_input(
+            "📜 Certifications (%)",
+            min_value=0,
+            max_value=100,
+            value=int(st.session_state.weights['certification'] * 100),
+            step=5,
+            help="Set weight for professional certifications"
+        )
+    
+    # Show total and preview
+    total = exp_weight + skills_weight + edu_weight + cert_weight
+    
+    # Preview what the normalized weights will be
+    if total > 0:
+        norm_exp = (exp_weight / total) * 100
+        norm_skills = (skills_weight / total) * 100
+        norm_edu = (edu_weight / total) * 100
+        norm_cert = (cert_weight / total) * 100
+        
+        st.markdown("**📊 Preview (Normalized to 100%):**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.info(f"🎯 {norm_exp:.0f}%")
+        with col2:
+            st.info(f"🛠️ {norm_skills:.0f}%")
+        with col3:
+            st.info(f"🎓 {norm_edu:.0f}%")
+        with col4:
+            st.info(f"📜 {norm_cert:.0f}%")
+        
+        # Apply button
+        if st.button("✅ Apply New Weights", type="primary", use_container_width=True):
+            # Normalize and apply weights
+            st.session_state.weights = {
+                "experience": exp_weight / total,
+                "skills": skills_weight / total,
+                "education": edu_weight / total,
+                "certification": cert_weight / total
+            }
+            st.success(f"✅ Weights updated! Experience: {norm_exp:.0f}%, Skills: {norm_skills:.0f}%, Education: {norm_edu:.0f}%, Certifications: {norm_cert:.0f}%")
+    else:
+        st.warning("⚠️ Please set at least one weight above 0")
+    
+    st.markdown("---")
+    st.info("💡 **How it works:** Set your desired percentages above, then click 'Apply New Weights'. The system will automatically balance them to total 100%.")
+
 # Streamlit UI
 def main():
     st.set_page_config(
@@ -919,136 +1036,174 @@ def main():
     if not check_password():
         st.stop()
     
-    # If authenticated, proceed with the app
-    
-    # Custom CSS
-    # Custom CSS - Replace the existing st.markdown CSS section with this
+    # Custom CSS for professional appearance
     st.markdown("""
     <style>
     .main-header {
         text-align: center;
-        padding: 1rem 0;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        border-radius: 10px;
+        border-radius: 15px;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
     
     .upload-section {
-        background-color: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 1.5rem;
         border: 1px solid #dee2e6;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
     
     .candidate-card {
         background: white;
         border: 1px solid #e9ecef;
         border-radius: 15px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        padding: 2rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .candidate-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
     
     .top-candidate-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border-radius: 20px;
-        padding: 2rem;
-        margin: 1rem 0;
+        padding: 2.5rem;
+        margin: 1.5rem 0;
         text-align: center;
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .top-candidate-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: shimmer 3s ease-in-out infinite;
+    }
+    
+    @keyframes shimmer {
+        0%, 100% { transform: rotate(0deg); }
+        50% { transform: rotate(180deg); }
     }
     
     .rank-badge {
         background: rgba(255,255,255,0.2);
-        border: 2px solid white;
+        border: 3px solid white;
         border-radius: 50%;
-        width: 60px;
-        height: 60px;
+        width: 70px;
+        height: 70px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin: 0 auto 1rem auto;
-        font-size: 1.5rem;
+        margin: 0 auto 1.5rem auto;
+        font-size: 1.8rem;
         font-weight: bold;
+        backdrop-filter: blur(10px);
+        position: relative;
+        z-index: 1;
     }
     
-    .metric-row {
-        display: flex;
-        justify-content: space-around;
-        margin: 1rem 0;
-        padding: 1rem;
-        background-color: #f8f9fa;
-        border-radius: 10px;
-    }
-    
-    .metric-item {
+    .metric-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
         text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin: 0.5rem;
+        transition: transform 0.3s ease;
     }
     
-    .metric-value {
-        font-size: 2rem;
-        font-weight: bold;
-        color: #667eea;
-    }
-    
-    .metric-label {
-        font-size: 0.9rem;
-        color: #6c757d;
+    .metric-card:hover {
+        transform: translateY(-3px);
     }
     
     .score-badge {
         display: inline-block;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
+        padding: 0.6rem 1.2rem;
+        border-radius: 25px;
         font-weight: bold;
-        margin: 0.5rem 0;
+        margin: 0.5rem;
+        font-size: 0.9rem;
+        position: relative;
+        z-index: 1;
     }
     
-    .score-excellent { background-color: #d4edda; color: #155724; }
-    .score-good { background-color: #cce7ff; color: #004085; }
-    .score-average { background-color: #fff3cd; color: #856404; }
-    .score-poor { background-color: #f8d7da; color: #721c24; }
+    .score-excellent { 
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    }
+    .score-good { 
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    }
+    .score-average { 
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+    }
+    .score-poor { 
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+    }
     
     /* Enhanced Tab Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #f0f2f6;
-        padding: 8px;
-        border-radius: 15px;
-        margin-bottom: 20px;
+        gap: 10px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 12px;
+        border-radius: 20px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
     
     .stTabs [data-baseweb="tab"] {
-        height: 60px;
+        height: 65px;
         white-space: pre-wrap;
-        background-color: #ffffff;
+        background: white;
         border: 2px solid #e1e5eb;
-        border-radius: 12px;
-        gap: 8px;
-        padding-left: 24px;
-        padding-right: 24px;
+        border-radius: 15px;
+        gap: 10px;
+        padding-left: 30px;
+        padding-right: 30px;
         font-weight: 600;
         font-size: 16px;
         color: #495057;
         transition: all 0.3s ease;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        position: relative;
+        overflow: hidden;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background-color: #f8f9fa;
+        background: #f8f9fa;
         border-color: #667eea;
         transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
     }
     
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white !important;
         border-color: #667eea;
-        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         transform: translateY(-3px);
     }
     
@@ -1057,35 +1212,43 @@ def main():
         transform: translateY(-3px);
     }
     
-    /* Tab Panel Styling */
-    .stTabs [data-baseweb="tab-panel"] {
-        padding-top: 20px;
+    /* Sidebar Enhancement */
+    .css-1d391kg {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     }
     
-    /* Custom Tab Colors for Different Tabs */
-    .stTabs [data-baseweb="tab"]:nth-child(1)[aria-selected="true"] {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    /* Button Enhancements */
+    .stButton > button {
+        border-radius: 10px;
+        font-weight: 600;
+        transition: all 0.3s ease;
     }
     
-    .stTabs [data-baseweb="tab"]:nth-child(2)[aria-selected="true"] {
-        background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
     }
     
-    .stTabs [data-baseweb="tab"]:nth-child(3)[aria-selected="true"] {
-        background: linear-gradient(135deg, #dc2626 0%, #ea580c 100%);
+    /* File uploader styling */
+    .stFileUploader > div > div > div {
+        border-radius: 15px;
+        border: 2px dashed #667eea;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     }
     
-    .stTabs [data-baseweb="tab"]:nth-child(4)[aria-selected="true"] {
-        background: linear-gradient(135deg, #7c2d12 0%, #dc2626 100%);
+    /* Progress bar styling */
+    .stProgress .st-bo {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Main header
+    # Main header with enhanced styling
     st.markdown("""
     <div class="main-header">
         <h1>🎯 SmartWorks AI Resume Shortlisting Tool</h1>
-        <p>Intelligent candidate screening powered by AI</p>
+        <p style="font-size: 1.1rem; margin-bottom: 0;">Intelligent candidate screening powered by Advanced AI</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1097,27 +1260,8 @@ def main():
         # Show user info
         show_user_info()
         
-        st.markdown("### ⚙️ Scoring Configuration")
-        
-        st.markdown("**Adjust importance of each criteria:**")
-        experience_weight = st.slider("Experience", 0.0, 1.0, st.session_state.weights["experience"], 0.05)
-        skills_weight = st.slider("Skills", 0.0, 1.0, st.session_state.weights["skills"], 0.05)
-        education_weight = st.slider("Education", 0.0, 1.0, st.session_state.weights["education"], 0.05)
-        certification_weight = st.slider("Certifications", 0.0, 1.0, st.session_state.weights["certification"], 0.05)
-        
-        # Normalize weights
-        total_weight = experience_weight + skills_weight + education_weight + certification_weight
-        if total_weight > 0:
-            st.session_state.weights = {
-                "experience": experience_weight / total_weight,
-                "skills": skills_weight / total_weight,
-                "education": education_weight / total_weight,
-                "certification": certification_weight / total_weight
-            }
-        
-        st.markdown("**Current Weights:**")
-        for key, value in st.session_state.weights.items():
-            st.write(f"• {key.title()}: {value:.1%}")
+        # Configure scoring weights with new professional interface
+        configure_scoring_weights()
 
     # Create tabs with improved handling
     if st.session_state.processing_complete:
@@ -1126,48 +1270,72 @@ def main():
         tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
     
     with tab1:
+        # Upload section with enhanced styling
+        st.markdown('<div class="upload-section">', unsafe_allow_html=True)
         st.markdown("### 📄 Upload Resume Files")
+        st.markdown("*Upload multiple PDF, DOC, or DOCX resume files for AI-powered analysis*")
+        
         uploaded_files = st.file_uploader(
-            "Choose PDF, DOC, or DOCX files",
+            "Choose Resume Files",
             type=["pdf", "docx", "doc"],
             accept_multiple_files=True,
-            help="Upload multiple resume files to process"
+            help="Upload multiple resume files to process. Supported formats: PDF, DOC, DOCX"
         )
         
         if uploaded_files:
-            st.success(f"✅ {len(uploaded_files)} files uploaded")
+            st.success(f"✅ {len(uploaded_files)} files uploaded successfully")
             
-            # Show file details
+            # Show file details with enhanced styling
             file_details = []
+            total_size = 0
             for file in uploaded_files:
+                size_kb = file.size / 1024
+                total_size += size_kb
                 file_details.append({
-                    "Filename": file.name,
-                    "Type": file.name.split('.')[-1].upper(),
-                    "Size": f"{file.size / 1024:.1f} KB"
+                    "📄 Filename": file.name,
+                    "📋 Type": file.name.split('.')[-1].upper(),
+                    "📊 Size": f"{size_kb:.1f} KB"
                 })
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Files", len(uploaded_files))
+            with col2:
+                st.metric("Total Size", f"{total_size:.1f} KB")
             
             st.dataframe(pd.DataFrame(file_details), use_container_width=True)
         
-        st.markdown("### 📋 Job Requirements")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        job_title = st.text_input("Job Title", placeholder="e.g., Senior Software Engineer")
+        # Job requirements section
+        st.markdown("### 📋 Job Requirements")
+        st.markdown("*Provide detailed job information for accurate candidate matching*")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            job_title = st.text_input(
+                "Job Title",
+                placeholder="e.g., Senior Software Engineer",
+                help="Enter the specific job title"
+            )
         
         job_description = st.text_area(
             "Job Description",
-            height=150,
-            placeholder="Paste the complete job description...",
-            help="Provide detailed job description for better matching"
+            height=200,
+            placeholder="Paste the complete job description including requirements, responsibilities, and qualifications...",
+            help="Provide comprehensive job description for better AI matching accuracy"
         )
         
         additional_preferences = st.text_area(
             "Additional Hiring Preferences (Optional)",
-            height=80,
-            placeholder="e.g., Prefer candidates with startup experience...",
-            help="Add specific preferences beyond the job description"
+            height=100,
+            placeholder="e.g., Prefer candidates with startup experience, remote work capability, specific certifications...",
+            help="Add specific preferences beyond the standard job description"
         )
         
-        # Process button
-        if st.button("🚀 Start Processing", type="primary", use_container_width=True):
+        # Process button with enhanced styling
+        st.markdown("---")
+        if st.button("🚀 Start AI Processing", type="primary", use_container_width=True):
             if not uploaded_files:
                 st.error("❌ Please upload at least one resume file")
             elif not job_description:
@@ -1176,10 +1344,10 @@ def main():
                 # Clear previous results
                 st.session_state.processing_complete = False
                 
-                st.markdown("### ⚡ Processing Results")
+                st.markdown("### ⚡ AI Processing Results")
                 
                 # Step 1: Extract candidate information
-                st.markdown("**📊 Extracting Resume Data**")
+                st.markdown("**📊 AI Resume Data Extraction**")
                 successful_resumes, failed_resumes = process_resume_batch(uploaded_files, client)
                 
                 st.session_state.successful_resumes = successful_resumes
@@ -1187,11 +1355,16 @@ def main():
                 st.session_state.successful_count = len(successful_resumes)
                 st.session_state.failed_count = len(failed_resumes)
                 
-                # Show extraction results
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Files", len(uploaded_files))
-                col2.metric("✅ Processed", len(successful_resumes))
-                col3.metric("❌ Failed", len(failed_resumes))
+                # Show extraction results with metrics (full width)
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📁 Total Files", len(uploaded_files))
+                with col2:
+                    st.metric("✅ Processed", len(successful_resumes))
+                with col3:
+                    st.metric("❌ Failed", len(failed_resumes))
+                with col4:
+                    st.metric("📈 Success Rate", f"{(len(successful_resumes)/len(uploaded_files)*100):.1f}%")
                 
                 # Show failed files summary if any
                 if failed_resumes:
@@ -1200,7 +1373,7 @@ def main():
                 
                 if successful_resumes:
                     # Step 2: Score candidates
-                    st.markdown("**🎯 Scoring Candidates**")
+                    st.markdown("**🎯 AI Candidate Scoring & Ranking**")
                     scored_candidates = score_candidates_in_batches(
                         successful_resumes, 
                         job_description, 
@@ -1213,22 +1386,50 @@ def main():
                     st.session_state.current_job_title = job_title or "Position"
                     st.session_state.processing_complete = True
                     
-                    # Show scoring results
+                    # Show scoring results with enhanced metrics (full width)
                     if scored_candidates:
                         highly_recommended = len([c for c in scored_candidates if c.get('recommendation') == 'HIGHLY_RECOMMENDED'])
                         recommended = len([c for c in scored_candidates if c.get('recommendation') == 'RECOMMENDED'])
                         avg_score = np.mean([c['overall_score'] for c in scored_candidates])
+                        top_score = max([c['overall_score'] for c in scored_candidates])
                         
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("🌟 Highly Recommended", highly_recommended)
-                        col2.metric("👍 Recommended", recommended)
-                        col3.metric("📊 Average Score", f"{avg_score:.1f}%")
+                        st.markdown("### 🎉 Processing Complete!")
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("🌟 Highly Recommended", highly_recommended)
+                        with col2:
+                            st.metric("👍 Recommended", recommended)
+                        with col3:
+                            st.metric("📊 Average Score", f"{avg_score:.1f}%")
+                        with col4:
+                            st.metric("🏆 Top Score", f"{top_score:.1f}%")
                         
-                        st.success("✅ Processing completed successfully!")
-                        st.info("📋 Check the 'Candidate Details' and 'Shortlisted Candidates' tabs for results")
+                        st.success("✅ AI processing completed successfully!")
                         
-                        # Automatically refresh to show new tab
-                        st.rerun()
+                        # Navigation guidance (full width)
+                        st.markdown("---")
+                        st.markdown("### 📋 What's Next?")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.info("""
+                            **👥 View All Candidates**
+                            
+                            Go to **'Candidate Details'** tab to:
+                            - See all extracted resume data
+                            - Download candidate information
+                            - Review processing results
+                            """)
+                        
+                        with col2:
+                            st.info("""
+                            **🏆 View Rankings**
+                            
+                            Go to **'Shortlisted Candidates'** tab to:
+                            - See AI-ranked top candidates
+                            - View detailed scoring analysis
+                            - Download comprehensive reports
+                            """)
                     else:
                         st.error("❌ No candidates could be scored. Please check your files and try again.")
                 else:
@@ -1243,10 +1444,18 @@ def main():
             st.session_state.candidate_df = candidate_df
             
             if candidate_df is not None:
-                st.dataframe(candidate_df, use_container_width=True)
+                # Show summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Total Candidates", len(candidate_df))
+                col2.metric("Unique Skills", len(set([skill for skills in candidate_df.get('Skills_List', []) for skill in str(skills).split(', ') if skill])))
+                col3.metric("Experience Range", f"Various")
+                col4.metric("Education Levels", len(set(candidate_df.get('Education_Summary', ['']))))
                 
-                # Download buttons
-                col1, col2 = st.columns(2)
+                st.dataframe(candidate_df, use_container_width=True, height=400)
+                
+                # Download buttons with enhanced styling
+                st.markdown("### 📥 Download Options")
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     # Download as Excel
@@ -1255,7 +1464,7 @@ def main():
                         candidate_df.to_excel(writer, sheet_name='Candidates', index=False)
                     
                     st.download_button(
-                        "📊 Download Excel",
+                        "📊 Download Excel Report",
                         data=excel_buffer.getvalue(),
                         file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1264,10 +1473,22 @@ def main():
                     )
                 
                 with col2:
+                    # Download as CSV
+                    csv_data = candidate_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "📄 Download CSV Data",
+                        data=csv_data,
+                        file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="candidates_csv_download"
+                    )
+                
+                with col3:
                     # Download as JSON
                     json_data = json.dumps(st.session_state.successful_resumes, indent=2)
                     st.download_button(
-                        "📄 Download JSON",
+                        "🔧 Download JSON Data",
                         data=json_data,
                         file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                         mime="application/json",
@@ -1275,148 +1496,281 @@ def main():
                         key="candidates_json_download"
                     )
         else:
-            st.info("📝 No candidate data available. Please process some resumes first.")
+            st.info("📝 No candidate data available. Please process some resumes first in the 'Upload & Process' tab.")
     
     with tab3:
-        st.markdown("### 🏆 Top 5 Candidates")
+        st.markdown("### 🏆 AI-Ranked Top Candidates")
         
         if st.session_state.top_candidates:
+            # Overall statistics
+            total_candidates = len(st.session_state.top_candidates)
+            highly_recommended = len([c for c in st.session_state.top_candidates if c.get('recommendation') == 'HIGHLY_RECOMMENDED'])
+            recommended = len([c for c in st.session_state.top_candidates if c.get('recommendation') == 'RECOMMENDED'])
+            avg_score = np.mean([c['overall_score'] for c in st.session_state.top_candidates])
+            
+            # Statistics cards
+            st.markdown("**📊 Screening Summary**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3 style="color: #667eea; margin: 0;">👥 {total_candidates}</h3>
+                    <p style="margin: 0; color: #6c757d;">Total Analyzed</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3 style="color: #10b981; margin: 0;">🌟 {highly_recommended}</h3>
+                    <p style="margin: 0; color: #6c757d;">Highly Recommended</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3 style="color: #3b82f6; margin: 0;">👍 {recommended}</h3>
+                    <p style="margin: 0; color: #6c757d;">Recommended</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3 style="color: #f59e0b; margin: 0;">📈 {avg_score:.1f}%</h3>
+                    <p style="margin: 0; color: #6c757d;">Average Match</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            # Top 5 candidates with enhanced cards
+            st.markdown("### 🥇 Top 5 Candidates")
             top_5 = st.session_state.top_candidates[:5]
             
-            # Display top 5 candidates
             for idx, candidate in enumerate(top_5):
                 candidate_info = candidate['candidate_data']
                 score = candidate['overall_score']
                 match_details = candidate['match_details']
                 
-                # Determine score class
+                # Determine score class and emoji
                 if score >= 85:
                     score_class = "score-excellent"
+                    score_emoji = "🎯"
                 elif score >= 70:
                     score_class = "score-good"
+                    score_emoji = "✅"
                 elif score >= 55:
                     score_class = "score-average"
+                    score_emoji = "⚠️"
                 else:
                     score_class = "score-poor"
+                    score_emoji = "❌"
+                
+                # Recommendation styling
+                rec_emoji = {
+                    'HIGHLY_RECOMMENDED': '🌟',
+                    'RECOMMENDED': '👍',
+                    'CONSIDER': '🤔',
+                    'NOT_RECOMMENDED': '❌'
+                }.get(candidate.get('recommendation', 'CONSIDER'), '🤔')
                 
                 st.markdown(f"""
                 <div class="top-candidate-card">
                     <div class="rank-badge">#{idx+1}</div>
-                    <h3>{candidate_info.get('Name', 'Unknown')}</h3>
-                    <div class="score-badge {score_class}" style="background: rgba(255,255,255,0.2); color: white;">
-                        {score:.1f}% Match
+                    <h2 style="margin-bottom: 1rem; position: relative; z-index: 1;">{candidate_info.get('Name', 'Unknown')}</h2>
+                    <div class="score-badge {score_class}">
+                        {score_emoji} {score:.1f}% Match Score
                     </div>
-                    <p><strong>📧 Email:</strong> {candidate_info.get('Email', 'N/A')}</p>
-                    <p><strong>📱 Phone:</strong> {candidate_info.get('Phone', 'N/A')}</p>
-                    <p><strong>💼 Experience:</strong> {candidate_info.get('Total_Experience', 'Not specified')}</p>
-                    <p><strong>🎯 Recommendation:</strong> {candidate.get('recommendation', 'CONSIDER')}</p>
+                    <p style="font-size: 1.1rem; margin: 1rem 0;"><strong>📧</strong> {candidate_info.get('Email', 'N/A')}</p>
+                    <p style="font-size: 1.1rem; margin: 1rem 0;"><strong>📱</strong> {candidate_info.get('Phone', 'N/A')}</p>
+                    <p style="font-size: 1.1rem; margin: 1rem 0;"><strong>💼</strong> {candidate_info.get('Total_Experience', 'Not specified')}</p>
+                    <p style="font-size: 1.1rem; margin: 1rem 0;"><strong>🎯</strong> {rec_emoji} {candidate.get('recommendation', 'CONSIDER')}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Detailed explanation
-                with st.expander(f"📝 Detailed Analysis - {candidate_info.get('Name', 'Unknown')}"):
+                # Detailed analysis in expandable section
+                with st.expander(f"📊 Detailed AI Analysis - {candidate_info.get('Name', 'Unknown')}", expanded=False):
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.markdown("**💡 Why this candidate:**")
+                        st.markdown("#### 💡 AI Assessment")
                         st.write(candidate.get('explanation', 'No explanation provided'))
                         
-                        st.markdown("**✅ Key Strengths:**")
-                        for strength in candidate.get('key_strengths', ['Not specified']):
+                        st.markdown("#### ✅ Key Strengths")
+                        strengths = candidate.get('key_strengths', ['Not specified'])
+                        for strength in strengths:
                             st.write(f"• {strength}")
                         
-                        st.markdown("**📈 Areas for Development:**")
-                        for gap in candidate.get('key_gaps', ['None identified']):
+                        st.markdown("#### 📈 Development Areas")
+                        gaps = candidate.get('key_gaps', ['None identified'])
+                        for gap in gaps:
                             st.write(f"• {gap}")
                     
                     with col2:
-                        st.markdown("**📊 Score Breakdown:**")
+                        st.markdown("#### 📊 Detailed Score Breakdown")
                         
-                        # Create score metrics
+                        # Create score metrics with progress bars
                         exp_score = match_details.get('experience', {}).get('score', 0)
                         skills_score = match_details.get('skills', {}).get('score', 0)
                         edu_score = match_details.get('education', {}).get('score', 0)
                         cert_score = match_details.get('certifications', {}).get('score', 0)
                         
-                        st.metric("Experience", f"{exp_score:.1f}%")
-                        st.metric("Skills", f"{skills_score:.1f}%")
-                        st.metric("Education", f"{edu_score:.1f}%")
-                        st.metric("Certifications", f"{cert_score:.1f}%")
+                        # Experience
+                        st.metric("🎯 Experience", f"{exp_score:.1f}%")
+                        st.progress(exp_score/100)
+                        
+                        # Skills
+                        st.metric("🛠️ Skills", f"{skills_score:.1f}%")
+                        st.progress(skills_score/100)
+                        
+                        # Education
+                        st.metric("🎓 Education", f"{edu_score:.1f}%")
+                        st.progress(edu_score/100)
+                        
+                        # Certifications
+                        st.metric("📜 Certifications", f"{cert_score:.1f}%")
+                        st.progress(cert_score/100)
                         
                         # Skills matching details
                         matching_skills = match_details.get('skills', {}).get('matching_skills', [])
                         if matching_skills:
-                            st.markdown("**✅ Matching Skills:**")
-                            for skill in matching_skills[:5]:
-                                st.write(f"• {skill}")
+                            st.markdown("#### ✅ Matching Skills")
+                            skills_text = ", ".join(matching_skills[:8])  # Show up to 8 skills
+                            if len(matching_skills) > 8:
+                                skills_text += f" (+{len(matching_skills)-8} more)"
+                            st.info(skills_text)
+                        
+                        missing_skills = match_details.get('skills', {}).get('missing_skills', [])
+                        if missing_skills:
+                            st.markdown("#### ❌ Missing Skills")
+                            missing_text = ", ".join(missing_skills[:5])  # Show up to 5 missing skills
+                            if len(missing_skills) > 5:
+                                missing_text += f" (+{len(missing_skills)-5} more)"
+                            st.warning(missing_text)
             
             st.markdown("---")
             
-            # All shortlisted candidates
-            st.markdown("### 📋 All Shortlisted Candidates")
+            # All candidates summary table
+            st.markdown("### 📋 Complete Candidate Rankings")
+            st.markdown("*All candidates ranked by AI matching score*")
             
-            # Create summary table
+            # Create enhanced summary table
             summary_data = []
             for idx, candidate in enumerate(st.session_state.top_candidates):
                 candidate_info = candidate['candidate_data']
+                
+                # Get skills summary
+                skills = candidate_info.get("Skills", [])
+                if isinstance(skills, list):
+                    skills_summary = ", ".join(skills[:5])  # Show first 5 skills
+                    if len(skills) > 5:
+                        skills_summary += f" (+{len(skills)-5} more)"
+                else:
+                    skills_summary = str(skills)[:100] + "..." if len(str(skills)) > 100 else str(skills)
+                
                 summary_data.append({
-                    "Rank": idx + 1,
+                    "Rank": f"#{idx + 1}",
                     "Name": candidate_info.get("Name", "Unknown"),
                     "Score": f"{candidate.get('overall_score', 0):.1f}%",
                     "Recommendation": candidate.get('recommendation', 'CONSIDER'),
                     "Experience": candidate_info.get("Total_Experience", "Not specified"),
+                    "Key Skills": skills_summary,
                     "Email": candidate_info.get("Email", ""),
                     "Phone": candidate_info.get("Phone", ""),
                     "Resume File": candidate_info.get("Source_File", "")
                 })
             
             summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, use_container_width=True)
             
-            # Download options
-            st.markdown("### 📥 Download Reports")
+            # Display with enhanced styling
+            st.dataframe(
+                summary_df, 
+                use_container_width=True,
+                height=400,
+                column_config={
+                    "Rank": st.column_config.TextColumn("🏆 Rank", width=80),
+                    "Name": st.column_config.TextColumn("👤 Name", width=150),
+                    "Score": st.column_config.TextColumn("📊 Score", width=80),
+                    "Recommendation": st.column_config.TextColumn("🎯 Recommendation", width=130),
+                    "Experience": st.column_config.TextColumn("💼 Experience", width=120),
+                    "Key Skills": st.column_config.TextColumn("🛠️ Key Skills", width=200),
+                    "Email": st.column_config.TextColumn("📧 Email", width=200),
+                    "Phone": st.column_config.TextColumn("📱 Phone", width=120),
+                    "Resume File": st.column_config.TextColumn("📄 File", width=200)
+                }
+            )
             
-            col1, col2, col3 = st.columns(3)
+            # Download section with enhanced options
+            st.markdown("---")
+            st.markdown("### 📥 Export Reports")
+            st.markdown("*Download comprehensive reports for further analysis and record keeping*")
+            
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 # Download all candidates CSV
                 csv_data = summary_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    "📊 Download All Candidates CSV",
+                    "📊 All Candidates CSV",
                     data=csv_data,
-                    file_name=f"shortlisted_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"all_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
                     use_container_width=True,
-                    key="all_candidates_csv_download"
+                    help="Download all ranked candidates data"
                 )
             
             with col2:
+                # Download top 10 CSV
+                top_10_csv = summary_df.head(10).to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "🏆 Top 10 CSV",
+                    data=top_10_csv,
+                    file_name=f"top_10_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    help="Download top 10 candidates only"
+                )
+            
+            with col3:
                 # Download top 5 CSV
                 top_5_csv = summary_df.head(5).to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    "🏆 Download Top 5 CSV",
+                    "🥇 Top 5 CSV",
                     data=top_5_csv,
                     file_name=f"top_5_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv",
                     use_container_width=True,
-                    key="top_5_csv_download"
+                    help="Download top 5 candidates only"
                 )
             
-            with col3:
+            with col4:
                 # Download complete Excel report
-                excel_data = create_excel_report(st.session_state.top_candidates, job_description if 'job_description' in locals() else "Job Description Not Available")
+                excel_data = create_excel_report(
+                    st.session_state.top_candidates, 
+                    job_description if 'job_description' in locals() else "Job Description Not Available"
+                )
                 
                 st.download_button(
-                    "📈 Download Complete Excel Report",
+                    "📈 Complete Report",
                     data=excel_data,
-                    file_name=f"complete_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    file_name=f"complete_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
-                    key="complete_excel_report_download"
+                    help="Download comprehensive Excel report with all analysis"
                 )
         
         else:
-            st.info("🎯 No candidates have been shortlisted yet. Please process some resumes first.")
+            # Enhanced empty state
+            st.markdown("""
+            <div style="text-align: center; padding: 4rem 2rem; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 20px; margin: 2rem 0;">
+                <h3 style="color: #667eea; margin-bottom: 1rem;">🎯 No Candidates Analyzed Yet</h3>
+                <p style="color: #6c757d; font-size: 1.1rem; margin-bottom: 2rem;">Upload resumes and process them in the 'Upload & Process' tab to see AI-powered candidate rankings here.</p>
+                <div style="font-size: 4rem; margin: 2rem 0;">🤖</div>
+                <p style="color: #495057; font-style: italic;">AI-powered resume screening awaits your input!</p>
+            </div>
+            """, unsafe_allow_html=True)
     
     # Show failed resumes tab only if processing is complete and there are failures
     if st.session_state.processing_complete and st.session_state.failed_resume_details:
