@@ -41,8 +41,6 @@ def init_session_state():
     """Initialize session state variables with authentication"""
     default_values = {
         'successful_resumes': [],
-        'failed_resumes': [],
-        'failed_resume_details': [],
         'candidate_df': None,
         'shortlisted_df': None,
         'job_requirements': None,
@@ -69,7 +67,7 @@ def init_session_state():
 
 # Text extraction functions
 def extract_text_from_pdf(pdf_file):
-    """Extract text from PDF file with detailed error handling"""
+    """Extract text from PDF file with enhanced error handling"""
     text = ""
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -100,7 +98,7 @@ def extract_text_from_pdf(pdf_file):
         raise Exception(error_msg)
 
 def extract_text_from_docx(docx_file):
-    """Extract text from DOCX file with detailed error handling"""
+    """Extract text from DOCX file with enhanced error handling"""
     text = ""
     try:
         doc = docx.Document(docx_file)
@@ -138,7 +136,7 @@ def extract_text_from_docx(docx_file):
         raise Exception(error_msg)
 
 def extract_text_from_file(uploaded_file):
-    """Extract text based on file type with detailed error handling"""
+    """Extract text based on file type with enhanced error handling"""
     file_ext = uploaded_file.name.lower().split('.')[-1]
     print(f"\n🔍 Processing file: {uploaded_file.name} (Type: {file_ext.upper()})")
     
@@ -155,9 +153,9 @@ def extract_text_from_file(uploaded_file):
         print(f"❌ File extraction failed for {uploaded_file.name}: {str(e)}")
         raise
 
-# Claude API functions
+# Improved Claude API functions with better prompts
 def get_resume_extraction_prompt(resume_text, filename_experience=None):
-    """Generate prompt for resume information extraction"""
+    """Generate enhanced prompt for resume information extraction with consistent experience formatting"""
     experience_instruction = ""
     if filename_experience:
         experience_instruction = f"""
@@ -165,9 +163,11 @@ def get_resume_extraction_prompt(resume_text, filename_experience=None):
     Use this exact value for the "Total_Experience" field in your JSON output.
     """
     
-    prompt = f"""You are a precise resume information extractor for an Applicant Tracking System. Extract information exactly as it appears in the resume and format it as JSON.{experience_instruction}
+    prompt = f"""You are an expert resume information extractor for an Applicant Tracking System. Your task is to extract information exactly as it appears in the resume and format it as clean, structured JSON.
 
-Your response must be ONLY a valid JSON object with this exact structure:
+{experience_instruction}
+
+CRITICAL: Your response must be ONLY a valid JSON object with this exact structure (no additional text, explanations, or markdown):
 
 {{
     "Name": "", 
@@ -211,15 +211,32 @@ Your response must be ONLY a valid JSON object with this exact structure:
 }}
 
 EXTRACTION RULES:
-1. Extract information exactly as stated in the resume
-2. For dates, use format shown in resume. Use "Present" for current positions
-3. For "Phone", extract ONLY phone numbers without labels
-4. For "Email", extract only email addresses
-5. For education, classify as "Degree", "12th", or "10th" in the "Type" field
-6. Extract all skills mentioned, keeping original terminology
-7. For responsibilities, create an array of distinct bullet points
-8. Use empty strings for missing text fields and empty arrays for missing list fields
-9. Return ONLY the JSON object, no additional text
+1. Extract information exactly as stated in the resume - do not interpret or modify
+2. For dates, preserve the format shown in resume. Use "Present" for current positions
+3. For "Phone", extract ONLY phone numbers (remove labels like "Phone:" or "Mobile:")
+4. For "Email", extract only email addresses (remove labels)
+5. For education, classify Type as "Degree", "12th", "10th", or "Certification"
+6. Extract ALL skills mentioned, preserving original terminology
+7. For responsibilities, create distinct bullet points as separate array elements
+8. Use empty strings ("") for missing text fields and empty arrays ([]) for missing list fields
+9. For Skills, include both technical and soft skills as separate items in the array
+
+CRITICAL EXPERIENCE FORMATTING RULES:
+10. For "Total_Experience", ALWAYS format as "X years" or "X+ years" (use numbers + "years"):
+    - "13+ years" → "13+ years" ✓
+    - "9 years" → "9 years" ✓  
+    - "Five years" → "5 years" ✓
+    - "2-3 years" → "2+ years" ✓
+    - "6 months" → "0+ years" ✓
+    - "1.5 years" → "1+ years" ✓
+    - "Fresher" → "0 years" ✓
+    - "Entry level" → "0 years" ✓
+
+11. If experience is unclear from text, calculate from work history dates and format as "X years"
+12. Never use decimals, always round down and add "+" if there are additional months
+13. Always use the format "NUMBER+ years" or "NUMBER years" - be consistent with this pattern
+
+IMPORTANT: Return ONLY the JSON object. No explanations, no markdown formatting, no additional text.
 
 Resume Text:
 {resume_text}"""
@@ -227,39 +244,56 @@ Resume Text:
     return prompt
 
 def get_candidate_scoring_prompt(job_description, candidate_data, weights, additional_preferences=""):
-    """Generate prompt for candidate scoring against job description"""
+    """Generate enhanced prompt for candidate scoring with better cross-role matching"""
     
-    # Format candidate data
-    candidate_skills = ", ".join(candidate_data.get("Skills", [])) if candidate_data.get("Skills") else "None listed"
+    # Format candidate data more robustly
+    candidate_skills = candidate_data.get("Skills", [])
+    if isinstance(candidate_skills, list):
+        candidate_skills_text = ", ".join(candidate_skills) if candidate_skills else "None listed"
+    else:
+        candidate_skills_text = str(candidate_skills) if candidate_skills else "None listed"
+    
     candidate_experience = candidate_data.get("Total_Experience", "Not specified")
     
-    # Format work experience
+    # Format work experience with better handling
     work_experience = ""
-    if candidate_data.get("Work_Experience"):
+    if candidate_data.get("Work_Experience") and isinstance(candidate_data["Work_Experience"], list):
         for idx, exp in enumerate(candidate_data["Work_Experience"]):
-            work_experience += f"Position {idx+1}: {exp.get('Position', 'Unknown')} at {exp.get('Company', 'Unknown')}, {exp.get('Duration', 'Duration not specified')}\n"
-            if exp.get("Responsibilities"):
-                work_experience += "   Key Responsibilities:\n"
-                for resp in exp.get("Responsibilities")[:3]:
-                    work_experience += f"   - {resp}\n"
+            if isinstance(exp, dict):
+                position = exp.get('Position', 'Unknown')
+                company = exp.get('Company', 'Unknown')
+                duration = exp.get('Duration', 'Duration not specified')
+                work_experience += f"• {position} at {company} ({duration})\n"
+                
+                responsibilities = exp.get("Responsibilities", [])
+                if responsibilities and isinstance(responsibilities, list):
+                    work_experience += "  Key Responsibilities:\n"
+                    for resp in responsibilities[:3]:  # Limit to top 3 for conciseness
+                        work_experience += f"    - {resp}\n"
+                work_experience += "\n"
     else:
         work_experience = "No work experience listed"
     
     # Format education
     education = ""
-    if candidate_data.get("Education"):
+    if candidate_data.get("Education") and isinstance(candidate_data["Education"], list):
         for idx, edu in enumerate(candidate_data["Education"]):
-            education += f"Education {idx+1}: {edu.get('Degree', 'Unknown')} from {edu.get('Institution', 'Unknown')}, {edu.get('Year', 'Year not specified')}\n"
+            if isinstance(edu, dict):
+                degree = edu.get('Degree', 'Unknown')
+                institution = edu.get('Institution', 'Unknown')
+                year = edu.get('Year', 'Year not specified')
+                education += f"• {degree} from {institution} ({year})\n"
     else:
         education = "No education listed"
     
     # Format certifications
     certifications = ""
-    if candidate_data.get("Certifications") and candidate_data.get("Certifications"):
-        if isinstance(candidate_data.get("Certifications"), list):
-            certifications = ", ".join([str(cert) for cert in candidate_data.get("Certifications")])
+    certs = candidate_data.get("Certifications", [])
+    if certs:
+        if isinstance(certs, list):
+            certifications = ", ".join([str(cert) for cert in certs])
         else:
-            certifications = str(candidate_data.get("Certifications"))
+            certifications = str(certs)
     else:
         certifications = "None listed"
     
@@ -269,104 +303,215 @@ def get_candidate_scoring_prompt(job_description, candidate_data, weights, addit
 ADDITIONAL HIRING PREFERENCES:
 {additional_preferences}
 
-Please consider these preferences when scoring the candidate.
+Consider these preferences when scoring, but prioritize transferable skills and potential over exact matches.
 """
     
-    prompt = f"""You are an expert HR recruiter evaluating how well a candidate matches a job description. 
+    prompt = f"""You are an expert HR consultant specializing in candidate evaluation and cross-functional role assessment. Your task is to evaluate how well a candidate matches a job description, focusing on transferable skills, potential, and adaptability.
 
-SCORING WEIGHTS:
-- Experience: {weights['experience'] * 100}%
-- Skills: {weights['skills'] * 100}%
-- Education: {weights['education'] * 100}%
-- Certifications: {weights['certification'] * 100}%
+SCORING FRAMEWORK:
+- Experience Weight: {weights['experience'] * 100}%
+- Skills Weight: {weights['skills'] * 100}%
+- Education Weight: {weights['education'] * 100}%
+- Certifications Weight: {weights['certification'] * 100}%
 
 JOB DESCRIPTION:
 {job_description}
 
 {additional_criteria}
 
-CANDIDATE INFORMATION:
+CANDIDATE PROFILE:
 Name: {candidate_data.get('Name', 'Not provided')}
 Total Experience: {candidate_experience}
-Skills: {candidate_skills}
-Work Experience: {work_experience}
-Education: {education}
+Skills: {candidate_skills_text}
+
+Work Experience:
+{work_experience}
+
+Education:
+{education}
+
 Certifications: {certifications}
+
 Profile Summary: {candidate_data.get('Profile_Summary', 'Not provided')}
 
-Analyze the candidate and return ONLY a JSON object with this structure:
+EVALUATION INSTRUCTIONS:
+1. Look beyond exact job title matches - focus on transferable skills and potential
+2. Consider how technical skills can translate across domains (e.g., system architecture knowledge valuable for product management)
+3. Evaluate leadership, problem-solving, and strategic thinking capabilities
+4. Assess learning agility and adaptability for role transitions
+5. Score each category 0-100 based on relevance and potential value to the role
+6. Be generous with cross-functional skills but honest about gaps
+
+Return ONLY a JSON object with this structure:
 
 {{
     "candidate_match": {{
-        "name": "Candidate name",
+        "name": "{candidate_data.get('Name', 'Unknown')}",
         "match_details": {{
             "experience": {{
                 "score": 85,
-                "details": "Detailed explanation of experience match"
+                "details": "Detailed explanation focusing on transferable experience and leadership potential"
             }},
             "skills": {{
                 "score": 70,
                 "matching_skills": ["skill1", "skill2"],
                 "missing_skills": ["skill3", "skill4"],
-                "details": "Detailed explanation of skills match"
+                "transferable_skills": ["skill5", "skill6"],
+                "details": "Explanation of how technical/functional skills translate to this role"
             }},
             "education": {{
                 "score": 90,
-                "details": "Detailed explanation of education match"
+                "details": "Assessment of educational background relevance"
             }},
             "certifications": {{
                 "score": 60,
-                "details": "Detailed explanation of certifications match"
+                "details": "Evaluation of certifications and their applicability"
             }}
         }},
         "overall_score": 78.5,
-        "explanation": "Detailed explanation of why this candidate is/isn't a good match",
+        "explanation": "Comprehensive explanation emphasizing candidate's potential and fit, acknowledging both strengths and development areas",
         "key_strengths": ["strength1", "strength2", "strength3"],
         "key_gaps": ["gap1", "gap2"],
-        "recommendation": "HIGHLY_RECOMMENDED/RECOMMENDED/CONSIDER/NOT_RECOMMENDED"
+        "recommendation": "HIGHLY_RECOMMENDED"
     }}
 }}
 
-Score each category from 0-100 based on relevance and quality of match. Be specific and detailed in explanations."""
+RECOMMENDATION GUIDELINES:
+- HIGHLY_RECOMMENDED (80-100%): Strong match with excellent transferable skills
+- RECOMMENDED (65-79%): Good match with some skill gaps but high potential
+- CONSIDER (50-64%): Moderate match, may work with training/development
+- NOT_RECOMMENDED (0-49%): Poor match with significant gaps
+
+Focus on potential and transferable value, not just exact matches."""
     
     return prompt
 
 def call_claude_api(client, prompt, max_tokens=3000):
-    """Call Claude API with detailed error handling"""
-    try:
-        print("🤖 Calling Claude API...")
-        response = client.messages.create(
-            model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-        print("✅ Claude API call successful")
-        return response.content[0].text
-    except Exception as e:
-        error_msg = f"Claude API error: {str(e)}"
-        print(f"❌ {error_msg}")
-        return None
+    """Call Claude API with enhanced error handling and retry logic"""
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"🤖 Calling Claude API (attempt {attempt + 1})...")
+            response = client.messages.create(
+                model=os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022"),
+                max_tokens=max_tokens,
+                temperature=0.1,  # Lower temperature for more consistent JSON output
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            print("✅ Claude API call successful")
+            return response.content[0].text
+        except Exception as e:
+            error_msg = f"Claude API error (attempt {attempt + 1}): {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            if attempt < max_retries - 1:
+                print(f"⏳ Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                print("❌ All retry attempts failed")
+                return None
+
+def normalize_experience_format(experience_text):
+    """Normalize experience format to be consistent across all candidates"""
+    if not experience_text or experience_text in ["Unknown", "Not specified", ""]:
+        return "Not specified"
+    
+    experience_text = str(experience_text).strip()
+    
+    # Convert text numbers to digits
+    text_to_num = {
+        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+        'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15'
+    }
+    
+    experience_lower = experience_text.lower()
+    
+    # Handle fresher/entry level cases
+    if any(word in experience_lower for word in ['fresher', 'entry level', 'entry-level', 'graduate', 'no experience']):
+        return "0 years"
+    
+    # Replace text numbers with digits
+    for text_num, digit in text_to_num.items():
+        experience_lower = experience_lower.replace(text_num, digit)
+    
+    # Extract numbers from the text
+    import re
+    numbers = re.findall(r'\d+\.?\d*', experience_lower)
+    
+    if not numbers:
+        return experience_text  # Return original if no numbers found
+    
+    # Get the main number (usually the first or largest)
+    main_number = max([float(num) for num in numbers])
+    
+    # Handle decimal cases
+    if main_number < 1:
+        if main_number > 0:
+            return "0+ years"
+        else:
+            return "0 years"
+    elif main_number == int(main_number):
+        # Whole number
+        years = int(main_number)
+        if '+' in experience_text or 'over' in experience_lower or 'above' in experience_lower or '-' in experience_text:
+            return f"{years}+ years"
+        else:
+            return f"{years} years"
+    else:
+        # Decimal number - round down and add +
+        years = int(main_number)
+        return f"{years}+ years"
 
 def parse_json_response(response_text, filename=""):
-    """Parse JSON from Claude response with detailed error handling"""
+    """Parse JSON from Claude response with enhanced error handling and experience normalization"""
     try:
         print(f"📝 Parsing JSON response for {filename}...")
+        
+        # Clean the response text
+        response_text = response_text.strip()
+        
+        # Remove any markdown formatting if present
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+        
+        response_text = response_text.strip()
+        
         # Try to parse directly first
         result = json.loads(response_text)
+        
+        # Normalize the experience format for consistency
+        if "Total_Experience" in result:
+            result["Total_Experience"] = normalize_experience_format(result["Total_Experience"])
+        
         print("✅ JSON parsing successful")
         return result
+        
     except json.JSONDecodeError as json_error:
         print(f"⚠️ Direct JSON parsing failed: {str(json_error)}")
         
         # Try to extract JSON from response if it has extra text
         try:
             print("🔍 Attempting to extract JSON from response...")
-            # Look for JSON block
+            # Look for JSON block with more flexible regex
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
-                result = json.loads(json_match.group())
+                json_str = json_match.group()
+                result = json.loads(json_str)
+                
+                # Normalize the experience format for consistency
+                if "Total_Experience" in result:
+                    result["Total_Experience"] = normalize_experience_format(result["Total_Experience"])
+                
                 print("✅ JSON extraction successful")
                 return result
             else:
@@ -374,32 +519,31 @@ def parse_json_response(response_text, filename=""):
         except Exception as extraction_error:
             print(f"❌ JSON extraction failed: {str(extraction_error)}")
         
-        # Log the raw response for debugging
+        # Log the raw response for debugging (first 500 chars)
         print(f"🔍 Raw response content:\n{response_text[:500]}...")
         
-        # Return fallback structure
+        # Return enhanced fallback structure
         print("⚠️ Returning fallback JSON structure")
         return {
-            "Name": "Unknown",
+            "Name": f"Parse_Failed_{filename}",
             "Phone": "",
             "Email": "",
             "Location": "",
             "Links": [],
-            "Profile_Summary": "",
+            "Profile_Summary": "Failed to parse resume content",
             "Skills": [],
             "Education": [],
             "Certifications": [],
-            "Total_Experience": "",
+            "Total_Experience": "Not specified",
             "Work_Experience": [],
             "Projects": [],
-            "Additional_Information": ""
+            "Additional_Information": f"Parsing failed for {filename}"
         }
 
 def process_resume_batch(uploaded_files, client):
-    """Process uploaded resumes in batches with detailed error logging"""
+    """Process uploaded resumes in batches with improved error handling"""
     successful_resumes = []
-    failed_resumes = []
-    failed_resume_details = []
+    failed_count = 0
     
     print(f"\n🚀 Starting batch processing of {len(uploaded_files)} files")
     print("=" * 80)
@@ -413,23 +557,14 @@ def process_resume_batch(uploaded_files, client):
         status_text.text(f"Extracting data from {uploaded_file.name}...")
         progress_bar.progress((i + 1) / len(uploaded_files))
         
-        failure_reason = ""
-        
         try:
             # Extract text from file
             print("📄 Starting text extraction...")
             text = extract_text_from_file(uploaded_file)
             
             if not text.strip():
-                failure_reason = "No text content extracted from file"
-                print(f"❌ {failure_reason}")
-                failed_resumes.append(uploaded_file.name)
-                failed_resume_details.append({
-                    "filename": uploaded_file.name,
-                    "stage": "Text Extraction",
-                    "reason": failure_reason,
-                    "details": "File appears to be empty or contains no readable text"
-                })
+                print(f"❌ No text content extracted from {uploaded_file.name}")
+                failed_count += 1
                 continue
             
             print(f"✅ Text extraction successful. Length: {len(text)} characters")
@@ -448,15 +583,8 @@ def process_resume_batch(uploaded_files, client):
             response = call_claude_api(client, prompt)
             
             if not response:
-                failure_reason = "Claude API call failed"
-                print(f"❌ {failure_reason}")
-                failed_resumes.append(uploaded_file.name)
-                failed_resume_details.append({
-                    "filename": uploaded_file.name,
-                    "stage": "API Call",
-                    "reason": failure_reason,
-                    "details": "No response received from Claude API"
-                })
+                print(f"❌ Claude API call failed for {uploaded_file.name}")
+                failed_count += 1
                 continue
             
             print("✅ Claude API response received")
@@ -465,17 +593,15 @@ def process_resume_batch(uploaded_files, client):
             print("📝 Parsing JSON response...")
             candidate_data = parse_json_response(response, uploaded_file.name)
             
-            # Validate essential fields
-            if not candidate_data.get("Name") or candidate_data.get("Name") == "Unknown":
-                failure_reason = "No candidate name found in extracted data"
-                print(f"⚠️ {failure_reason}")
-                # Still process but add warning
+            # Validate and clean the extracted data
+            if not candidate_data.get("Name") or candidate_data.get("Name").startswith("Parse_Failed_"):
+                print(f"⚠️ Parsing issues detected for {uploaded_file.name}, but continuing with available data")
             
             # Add metadata
             candidate_data["Source_File"] = uploaded_file.name
-            candidate_data["Extraction_Date"] = datetime.now().strftime("%Y-%m-%d")
+            candidate_data["Extraction_Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # Print extracted data for debugging
+            # Print extracted data summary
             print(f"\n=== EXTRACTED RESUME DATA FOR {uploaded_file.name} ===")
             print(f"Name: {candidate_data.get('Name', 'N/A')}")
             print(f"Email: {candidate_data.get('Email', 'N/A')}")
@@ -489,32 +615,20 @@ def process_resume_batch(uploaded_files, client):
             print(f"✅ Successfully processed {uploaded_file.name}")
             
         except Exception as e:
-            failure_reason = f"Unexpected error: {str(e)}"
-            print(f"❌ Error processing {uploaded_file.name}: {failure_reason}")
+            print(f"❌ Error processing {uploaded_file.name}: {str(e)}")
             print(f"📍 Traceback: {traceback.format_exc()}")
-            
-            failed_resumes.append(uploaded_file.name)
-            failed_resume_details.append({
-                "filename": uploaded_file.name,
-                "stage": "Processing",
-                "reason": failure_reason,
-                "details": str(e)
-            })
+            failed_count += 1
     
-    # Store detailed failure information in session state
-    st.session_state.failed_resume_details = failed_resume_details
+    # Update session state
+    st.session_state.successful_count = len(successful_resumes)
+    st.session_state.failed_count = failed_count
     
     print(f"\n🎉 Batch processing completed!")
     print(f"✅ Successful: {len(successful_resumes)}")
-    print(f"❌ Failed: {len(failed_resumes)}")
-    
-    if failed_resumes:
-        print(f"\n📝 Failed files summary:")
-        for detail in failed_resume_details:
-            print(f"❌ {detail['filename']}: {detail['reason']}")
+    print(f"❌ Failed: {failed_count}")
     
     status_text.text("Data extraction completed!")
-    return successful_resumes, failed_resumes
+    return successful_resumes
 
 def extract_experience_from_filename(filename):
     """Extract experience from filename pattern like [2y_6m]"""
@@ -536,13 +650,13 @@ def extract_experience_from_filename(filename):
     
     return None
 
-def score_candidates_in_batches(candidates, job_description, client, weights, additional_preferences="", batch_size=10):
-    """Score candidates in batches against job description"""
+def score_candidates_in_batches(candidates, job_description, client, weights, additional_preferences="", batch_size=5):
+    """Score candidates in smaller batches with improved error handling"""
     scored_candidates = []
     
     print(f"\n🎯 Starting candidate scoring for {len(candidates)} candidates")
     
-    # Create batches
+    # Create smaller batches for better reliability
     batches = [candidates[i:i + batch_size] for i in range(0, len(candidates), batch_size)]
     
     total_batches = len(batches)
@@ -560,7 +674,7 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
             
             try:
                 prompt = get_candidate_scoring_prompt(job_description, candidate, weights, additional_preferences)
-                response = call_claude_api(client, prompt, max_tokens=2000)
+                response = call_claude_api(client, prompt, max_tokens=2500)
                 
                 if response:
                     match_data = parse_json_response(response, candidate_name)
@@ -591,14 +705,16 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
                 print(f"❌ Error scoring {candidate_name}: {str(e)}")
                 scored_candidates.append(create_fallback_score(candidate))
         
-        # Small delay between batches to avoid rate limiting
-        time.sleep(1)
+        # Longer delay between batches to avoid rate limiting
+        if batch_idx < total_batches - 1:  # Don't delay after the last batch
+            time.sleep(2)
     
     batch_status.text("Candidate scoring completed!")
     
     # Sort by score
     scored_candidates.sort(key=lambda x: x['overall_score'], reverse=True)
-    print(f"🏆 Scoring completed. Top candidate: {scored_candidates[0]['candidate_data'].get('Name', 'Unknown')} ({scored_candidates[0]['overall_score']:.1f}%)")
+    if scored_candidates:
+        print(f"🏆 Scoring completed. Top candidate: {scored_candidates[0]['candidate_data'].get('Name', 'Unknown')} ({scored_candidates[0]['overall_score']:.1f}%)")
     
     return scored_candidates
 
@@ -607,15 +723,15 @@ def create_fallback_score(candidate):
     return {
         'candidate_data': candidate,
         'match_details': {
-            'experience': {'score': 50, 'details': 'Could not evaluate'},
-            'skills': {'score': 50, 'details': 'Could not evaluate'},
-            'education': {'score': 50, 'details': 'Could not evaluate'},
-            'certifications': {'score': 50, 'details': 'Could not evaluate'}
+            'experience': {'score': 50, 'details': 'Could not evaluate due to processing issues'},
+            'skills': {'score': 50, 'details': 'Could not evaluate due to processing issues', 'matching_skills': [], 'missing_skills': []},
+            'education': {'score': 50, 'details': 'Could not evaluate due to processing issues'},
+            'certifications': {'score': 50, 'details': 'Could not evaluate due to processing issues'}
         },
         'overall_score': 50,
-        'explanation': "Could not fully evaluate due to processing issues",
-        'key_strengths': ["Unable to determine"],
-        'key_gaps': ["Unable to determine"],
+        'explanation': "Could not fully evaluate due to processing issues. Manual review recommended.",
+        'key_strengths': ["Unable to determine - manual review needed"],
+        'key_gaps': ["Unable to determine - manual review needed"],
         'recommendation': 'CONSIDER'
     }
 
@@ -647,7 +763,7 @@ def safe_convert_to_string(value):
         return str(value)
 
 def convert_to_dataframe(resumes_data):
-    """Convert resume data to DataFrame with proper error handling"""
+    """Convert resume data to DataFrame with enhanced error handling"""
     if not resumes_data:
         return None
     
@@ -661,9 +777,13 @@ def convert_to_dataframe(resumes_data):
         result = []
         for e in edu_list:
             if isinstance(e, dict):
-                edu_str = f"{e.get('Degree', '')} from {e.get('Institution', '')} ({e.get('Year', '')})"
-                result.append(edu_str.strip())
-        return "; ".join([r for r in result if r])
+                degree = e.get('Degree', '').strip()
+                institution = e.get('Institution', '').strip()
+                year = e.get('Year', '').strip()
+                if degree or institution:
+                    edu_str = f"{degree} from {institution} ({year})".strip()
+                    result.append(edu_str)
+        return "; ".join([r for r in result if r and r != " from  ()"])
     
     def extract_work_exp(exp_list):
         if not exp_list or not isinstance(exp_list, list):
@@ -671,14 +791,18 @@ def convert_to_dataframe(resumes_data):
         result = []
         for e in exp_list:
             if isinstance(e, dict):
-                exp_str = f"{e.get('Position', '')} at {e.get('Company', '')} ({e.get('Duration', '')})"
-                result.append(exp_str.strip())
-        return "; ".join([r for r in result if r])
+                position = e.get('Position', '').strip()
+                company = e.get('Company', '').strip()
+                duration = e.get('Duration', '').strip()
+                if position or company:
+                    exp_str = f"{position} at {company} ({duration})".strip()
+                    result.append(exp_str)
+        return "; ".join([r for r in result if r and r != " at  ()"])
     
     def extract_skills(skills_list):
         if not skills_list or not isinstance(skills_list, list):
             return ""
-        return ", ".join([str(skill) for skill in skills_list])
+        return ", ".join([str(skill).strip() for skill in skills_list if str(skill).strip()])
     
     def extract_projects(proj_list):
         if not proj_list or not isinstance(proj_list, list):
@@ -686,9 +810,12 @@ def convert_to_dataframe(resumes_data):
         result = []
         for p in proj_list:
             if isinstance(p, dict):
-                proj_str = f"{p.get('Title', '')} - {p.get('Description', '')}"
-                result.append(proj_str.strip())
-        return "; ".join([r for r in result if r])
+                title = p.get('Title', '').strip()
+                description = p.get('Description', '').strip()
+                if title:
+                    proj_str = f"{title}: {description}".strip()
+                    result.append(proj_str)
+        return "; ".join([r for r in result if r and not r.endswith(': ')])
     
     # Apply processing to nested fields
     try:
@@ -719,7 +846,7 @@ def convert_to_dataframe(resumes_data):
     return df
 
 def create_excel_report(scored_candidates, job_description):
-    """Create comprehensive Excel report"""
+    """Create comprehensive Excel report with enhanced formatting"""
     output = BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -728,6 +855,17 @@ def create_excel_report(scored_candidates, job_description):
         for idx, candidate in enumerate(scored_candidates):
             candidate_info = candidate['candidate_data']
             match_details = candidate['match_details']
+            
+            # Safely extract skills
+            skills = candidate_info.get("Skills", [])
+            if isinstance(skills, list):
+                skills_text = ", ".join(skills)
+            else:
+                skills_text = str(skills)
+            
+            # Safely extract matching and missing skills
+            matching_skills = match_details.get('skills', {}).get('matching_skills', [])
+            missing_skills = match_details.get('skills', {}).get('missing_skills', [])
             
             row = {
                 "Rank": idx + 1,
@@ -742,12 +880,12 @@ def create_excel_report(scored_candidates, job_description):
                 "Phone": candidate_info.get("Phone", ""),
                 "Email": candidate_info.get("Email", ""),
                 "Location": candidate_info.get("Location", ""),
-                "Skills": safe_convert_to_string(candidate_info.get("Skills", [])),
-                "Matching_Skills": ", ".join(match_details.get('skills', {}).get('matching_skills', [])),
-                "Missing_Skills": ", ".join(match_details.get('skills', {}).get('missing_skills', [])),
+                "Skills": skills_text[:500] if len(skills_text) > 500 else skills_text,  # Limit length for Excel
+                "Matching_Skills": ", ".join(matching_skills) if matching_skills else "",
+                "Missing_Skills": ", ".join(missing_skills) if missing_skills else "",
                 "Key_Strengths": ", ".join(candidate.get('key_strengths', [])),
                 "Key_Gaps": ", ".join(candidate.get('key_gaps', [])),
-                "Explanation": candidate.get('explanation', ''),
+                "Explanation": candidate.get('explanation', '')[:500],  # Limit for Excel
                 "Resume_File": candidate_info.get("Source_File", "")
             }
             main_data.append(row)
@@ -761,7 +899,7 @@ def create_excel_report(scored_candidates, job_description):
         
         # Job description sheet
         job_data = [
-            {"Field": "Job Description", "Content": job_description},
+            {"Field": "Job Description", "Content": job_description[:1000]},  # Limit length
             {"Field": "Generated On", "Content": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
             {"Field": "Total Candidates", "Content": len(scored_candidates)},
             {"Field": "Highly Recommended", "Content": len([c for c in scored_candidates if c.get('recommendation') == 'HIGHLY_RECOMMENDED'])},
@@ -864,48 +1002,8 @@ def show_user_info():
                 del st.session_state[key]
             st.rerun()
 
-def show_failed_resumes():
-    """Display detailed information about failed resumes"""
-    if st.session_state.failed_resume_details:
-        st.markdown("### ❌ Failed Resume Analysis")
-        
-        # Create a DataFrame for failed resumes
-        failed_df = pd.DataFrame(st.session_state.failed_resume_details)
-        
-        # Show summary
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Failed", len(failed_df))
-        with col2:
-            text_extraction_fails = len(failed_df[failed_df['stage'] == 'Text Extraction'])
-            st.metric("Text Extraction Failures", text_extraction_fails)
-        with col3:
-            api_fails = len(failed_df[failed_df['stage'] == 'API Call'])
-            st.metric("API Call Failures", api_fails)
-        
-        # Show detailed table
-        st.dataframe(
-            failed_df[['filename', 'stage', 'reason', 'details']], 
-            use_container_width=True,
-            column_config={
-                "filename": "File Name",
-                "stage": "Failure Stage", 
-                "reason": "Reason",
-                "details": "Details"
-            }
-        )
-        
-        # Download failed resumes report
-        csv_data = failed_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "📥 Download Failed Resumes Report",
-            data=csv_data,
-            file_name=f"failed_resumes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-
 def configure_scoring_weights():
-    """Simple weight configuration where user can set multiple weights and apply together"""
+    """Enhanced weight configuration interface"""
     st.markdown("### ⚙️ Scoring Configuration")
     
     # Show current weights
@@ -1036,7 +1134,7 @@ def main():
     if not check_password():
         st.stop()
     
-    # Custom CSS for professional appearance
+    # Enhanced CSS for professional appearance
     st.markdown("""
     <style>
     .main-header {
@@ -1241,6 +1339,12 @@ def main():
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 10px;
     }
+    
+    /* Alert styling */
+    .stAlert {
+        border-radius: 10px;
+        border-left: 4px solid;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1260,14 +1364,11 @@ def main():
         # Show user info
         show_user_info()
         
-        # Configure scoring weights with new professional interface
+        # Configure scoring weights
         configure_scoring_weights()
 
-    # Create tabs with improved handling
-    if st.session_state.processing_complete:
-        tab1, tab2, tab3, tab4 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates", "❌ Failed Resumes"])
-    else:
-        tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
+    # Create tabs (removed failed resumes tab)
+    tab1, tab2, tab3 = st.tabs(["📁 Upload & Process", "👥 Candidate Details", "🏆 Shortlisted Candidates"])
     
     with tab1:
         # Upload section with enhanced styling
@@ -1348,28 +1449,23 @@ def main():
                 
                 # Step 1: Extract candidate information
                 st.markdown("**📊 AI Resume Data Extraction**")
-                successful_resumes, failed_resumes = process_resume_batch(uploaded_files, client)
+                successful_resumes = process_resume_batch(uploaded_files, client)
                 
                 st.session_state.successful_resumes = successful_resumes
-                st.session_state.failed_resumes = failed_resumes
                 st.session_state.successful_count = len(successful_resumes)
-                st.session_state.failed_count = len(failed_resumes)
+                st.session_state.failed_count = len(uploaded_files) - len(successful_resumes)
                 
-                # Show extraction results with metrics (full width)
+                # Show extraction results with metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("📁 Total Files", len(uploaded_files))
                 with col2:
                     st.metric("✅ Processed", len(successful_resumes))
                 with col3:
-                    st.metric("❌ Failed", len(failed_resumes))
+                    st.metric("❌ Failed", st.session_state.failed_count)
                 with col4:
-                    st.metric("📈 Success Rate", f"{(len(successful_resumes)/len(uploaded_files)*100):.1f}%")
-                
-                # Show failed files summary if any
-                if failed_resumes:
-                    with st.expander(f"❌ View {len(failed_resumes)} Failed Files", expanded=False):
-                        show_failed_resumes()
+                    success_rate = (len(successful_resumes)/len(uploaded_files)*100) if uploaded_files else 0
+                    st.metric("📈 Success Rate", f"{success_rate:.1f}%")
                 
                 if successful_resumes:
                     # Step 2: Score candidates
@@ -1386,11 +1482,11 @@ def main():
                     st.session_state.current_job_title = job_title or "Position"
                     st.session_state.processing_complete = True
                     
-                    # Show scoring results with enhanced metrics (full width)
+                    # Show scoring results with enhanced metrics
                     if scored_candidates:
                         highly_recommended = len([c for c in scored_candidates if c.get('recommendation') == 'HIGHLY_RECOMMENDED'])
                         recommended = len([c for c in scored_candidates if c.get('recommendation') == 'RECOMMENDED'])
-                        avg_score = np.mean([c['overall_score'] for c in scored_candidates])
+                        hig_score = np.max([c['overall_score'] for c in scored_candidates])
                         top_score = max([c['overall_score'] for c in scored_candidates])
                         
                         st.markdown("### 🎉 Processing Complete!")
@@ -1400,13 +1496,13 @@ def main():
                         with col2:
                             st.metric("👍 Recommended", recommended)
                         with col3:
-                            st.metric("📊 Average Score", f"{avg_score:.1f}%")
+                            st.metric("📊 Highly Match", f"{hig_score:.1f}%")
                         with col4:
                             st.metric("🏆 Top Score", f"{top_score:.1f}%")
                         
                         st.success("✅ AI processing completed successfully!")
                         
-                        # Navigation guidance (full width)
+                        # Navigation guidance
                         st.markdown("---")
                         st.markdown("### 📋 What's Next?")
                         col1, col2 = st.columns(2)
@@ -1447,9 +1543,24 @@ def main():
                 # Show summary metrics
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Total Candidates", len(candidate_df))
-                col2.metric("Unique Skills", len(set([skill for skills in candidate_df.get('Skills_List', []) for skill in str(skills).split(', ') if skill])))
-                col3.metric("Experience Range", f"Various")
-                col4.metric("Education Levels", len(set(candidate_df.get('Education_Summary', ['']))))
+                
+                # Calculate unique skills more safely
+                all_skills = []
+                for skills in candidate_df.get('Skills_List', []):
+                    if isinstance(skills, str) and skills:
+                        all_skills.extend([skill.strip() for skill in skills.split(',') if skill.strip()])
+                unique_skills = len(set(all_skills)) if all_skills else 0
+                col2.metric("Unique Skills", unique_skills)
+                
+                # Experience range calculation
+                exp_values = candidate_df.get('Total_Experience', [])
+                exp_count = sum(1 for exp in exp_values if exp and str(exp) != 'Unknown' and str(exp) != 'Not specified')
+                col3.metric("With Experience Info", exp_count)
+                
+                # Education levels
+                edu_values = candidate_df.get('Education_Summary', [])
+                edu_count = sum(1 for edu in edu_values if edu and str(edu).strip())
+                col4.metric("With Education Info", edu_count)
                 
                 st.dataframe(candidate_df, use_container_width=True, height=400)
                 
@@ -1506,7 +1617,7 @@ def main():
             total_candidates = len(st.session_state.top_candidates)
             highly_recommended = len([c for c in st.session_state.top_candidates if c.get('recommendation') == 'HIGHLY_RECOMMENDED'])
             recommended = len([c for c in st.session_state.top_candidates if c.get('recommendation') == 'RECOMMENDED'])
-            avg_score = np.mean([c['overall_score'] for c in st.session_state.top_candidates])
+            hig_score = np.max([c['overall_score'] for c in st.session_state.top_candidates])
             
             # Statistics cards
             st.markdown("**📊 Screening Summary**")
@@ -1538,8 +1649,8 @@ def main():
             with col4:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h3 style="color: #f59e0b; margin: 0;">📈 {avg_score:.1f}%</h3>
-                    <p style="margin: 0; color: #6c757d;">Average Match</p>
+                    <h3 style="color: #f59e0b; margin: 0;">📈 {hig_score:.1f}%</h3>
+                    <p style="margin: 0; color: #6c757d;">Average Score</p>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -1649,6 +1760,15 @@ def main():
                             if len(missing_skills) > 5:
                                 missing_text += f" (+{len(missing_skills)-5} more)"
                             st.warning(missing_text)
+                        
+                        # Show transferable skills if available
+                        transferable_skills = match_details.get('skills', {}).get('transferable_skills', [])
+                        if transferable_skills:
+                            st.markdown("#### 🔄 Transferable Skills")
+                            trans_text = ", ".join(transferable_skills[:6])
+                            if len(transferable_skills) > 6:
+                                trans_text += f" (+{len(transferable_skills)-6} more)"
+                            st.success(trans_text)
             
             st.markdown("---")
             
@@ -1661,7 +1781,7 @@ def main():
             for idx, candidate in enumerate(st.session_state.top_candidates):
                 candidate_info = candidate['candidate_data']
                 
-                # Get skills summary
+                # Get skills summary safely
                 skills = candidate_info.get("Skills", [])
                 if isinstance(skills, list):
                     skills_summary = ", ".join(skills[:5])  # Show first 5 skills
@@ -1771,11 +1891,6 @@ def main():
                 <p style="color: #495057; font-style: italic;">AI-powered resume screening awaits your input!</p>
             </div>
             """, unsafe_allow_html=True)
-    
-    # Show failed resumes tab only if processing is complete and there are failures
-    if st.session_state.processing_complete and st.session_state.failed_resume_details:
-        with tab4:
-            show_failed_resumes()
 
 if __name__ == "__main__":
     main()
