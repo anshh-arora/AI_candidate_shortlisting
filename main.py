@@ -113,7 +113,7 @@ def extract_text_from_pdf(pdf_file):
     text = ""
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
-        logger.info(f"📄 PDF has {len(pdf_reader.pages)} pages")
+        logger.info(f"PDF has {len(pdf_reader.pages)} pages")
         
         for page_num in range(len(pdf_reader.pages)):
             try:
@@ -121,22 +121,22 @@ def extract_text_from_pdf(pdf_file):
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
-                    logger.info(f"✅ Extracted text from page {page_num + 1}: {len(page_text)} characters")
+                    logger.info(f"Extracted text from page {page_num + 1}: {len(page_text)} characters")
                 else:
-                    logger.warning(f"⚠️ No text found on page {page_num + 1}")
+                    logger.warning(f"No text found on page {page_num + 1}")
             except Exception as page_error:
-                logger.error(f"❌ Error extracting page {page_num + 1}: {str(page_error)}")
+                logger.error(f"Error extracting page {page_num + 1}: {str(page_error)}")
                 continue
                 
         if not text.strip():
             raise Exception("No text could be extracted from any page")
             
-        logger.info(f"✅ Total extracted text: {len(text)} characters")
+        logger.info(f"Total extracted text: {len(text)} characters")
         return text
         
     except Exception as e:
         error_msg = f"PDF extraction failed: {str(e)}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(f" {error_msg}")
         raise Exception(error_msg)
 
 def extract_text_from_docx(docx_file):
@@ -152,7 +152,7 @@ def extract_text_from_docx(docx_file):
                 text += paragraph.text + "\n"
                 paragraph_count += 1
         
-        logger.info(f"📝 Extracted text from {paragraph_count} paragraphs")
+        logger.info(f" Extracted text from {paragraph_count} paragraphs")
         
         # Extract from tables
         table_count = 0
@@ -164,17 +164,17 @@ def extract_text_from_docx(docx_file):
                 text += "\n"
             table_count += 1
             
-        logger.info(f"📊 Extracted text from {table_count} tables")
+        logger.info(f" Extracted text from {table_count} tables")
         
         if not text.strip():
             raise Exception("No text content found in document")
             
-        logger.info(f"✅ Total extracted text: {len(text)} characters")
+        logger.info(f" Total extracted text: {len(text)} characters")
         return text
         
     except Exception as e:
         error_msg = f"DOCX extraction failed: {str(e)}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(f" {error_msg}")
         raise Exception(error_msg)
 
 def extract_text_from_file(uploaded_file):
@@ -189,10 +189,10 @@ def extract_text_from_file(uploaded_file):
             return extract_text_from_docx(uploaded_file)
         else:
             error_msg = f"Unsupported file type: {file_ext}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"{error_msg}")
             raise Exception(error_msg)
     except Exception as e:
-        logger.error(f"❌ File extraction failed for {uploaded_file.name}: {str(e)}")
+        logger.error(f"File extraction failed for {uploaded_file.name}: {str(e)}")
         raise
 
 # Improved Claude API functions with seed parameter
@@ -431,7 +431,7 @@ Focus on potential and transferable value, not just exact matches."""
 def call_claude_api(client, prompt, max_tokens=3000, seed=None):
     """Call Claude API with enhanced error handling, retry logic, and seed parameter for consistency"""
     if not client:
-        logger.error("❌ Claude client not initialized")
+        logger.error("Claude client not initialized")
         return None
         
     max_retries = 3
@@ -459,39 +459,39 @@ def call_claude_api(client, prompt, max_tokens=3000, seed=None):
                 request_params["messages"][0]["content"] += consistent_instruction
             
             response = client.messages.create(**request_params)
-            logger.info("✅ Claude API call successful")
+            logger.info("Claude API call successful")
             return response.content[0].text
             
         except anthropic.RateLimitError as e:
-            logger.warning(f"⏳ Rate limit hit (attempt {attempt + 1}): {str(e)}")
+            logger.warning(f"Rate limit hit (attempt {attempt + 1}): {str(e)}")
             if attempt < max_retries - 1:
                 delay = retry_delay * (2 ** attempt)  # Exponential backoff
-                logger.info(f"⏳ Retrying in {delay} seconds...")
+                logger.info(f"Retrying in {delay} seconds...")
                 time.sleep(delay)
             else:
-                logger.error("❌ Rate limit exceeded, all retry attempts failed")
+                logger.error("Rate limit exceeded, all retry attempts failed")
                 return None
                 
         except anthropic.APIError as e:
-            logger.error(f"❌ Claude API error (attempt {attempt + 1}): {str(e)}")
+            logger.error(f"Claude API error (attempt {attempt + 1}): {str(e)}")
             if attempt < max_retries - 1:
-                logger.info(f"⏳ Retrying in {retry_delay} seconds...")
+                logger.info(f"Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
             else:
-                logger.error("❌ All retry attempts failed")
+                logger.error("All retry attempts failed")
                 return None
                 
         except Exception as e:
             error_msg = f"Unexpected error (attempt {attempt + 1}): {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f"{error_msg}")
             
             if attempt < max_retries - 1:
-                logger.info(f"⏳ Retrying in {retry_delay} seconds...")
+                logger.info(f"Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
             else:
-                logger.error("❌ All retry attempts failed")
+                logger.error("All retry attempts failed")
                 return None
             
 def normalize_experience_format(experience_text):
@@ -548,7 +548,7 @@ def normalize_experience_format(experience_text):
 def parse_json_response(response_text, filename=""):
     """Parse JSON from Claude response with enhanced error handling and experience normalization"""
     try:
-        logger.info(f"📝 Parsing JSON response for {filename}...")
+        logger.info(f"Parsing JSON response for {filename}...")
         
         # Clean the response text
         response_text = response_text.strip()
@@ -570,15 +570,15 @@ def parse_json_response(response_text, filename=""):
         if "Total_Experience" in result:
             result["Total_Experience"] = normalize_experience_format(result["Total_Experience"])
         
-        logger.info("✅ JSON parsing successful")
+        logger.info(" JSON parsing successful")
         return result
         
     except json.JSONDecodeError as json_error:
-        logger.warning(f"⚠️ Direct JSON parsing failed: {str(json_error)}")
+        logger.warning(f" Direct JSON parsing failed: {str(json_error)}")
         
         # Try to extract JSON from response if it has extra text
         try:
-            logger.info("🔍 Attempting to extract JSON from response...")
+            logger.info(" Attempting to extract JSON from response...")
             # Look for JSON block with more flexible regex
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
@@ -589,18 +589,18 @@ def parse_json_response(response_text, filename=""):
                 if "Total_Experience" in result:
                     result["Total_Experience"] = normalize_experience_format(result["Total_Experience"])
                 
-                logger.info("✅ JSON extraction successful")
+                logger.info(" JSON extraction successful")
                 return result
             else:
-                logger.error("❌ No JSON structure found in response")
+                logger.error(" No JSON structure found in response")
         except Exception as extraction_error:
-            logger.error(f"❌ JSON extraction failed: {str(extraction_error)}")
+            logger.error(f" JSON extraction failed: {str(extraction_error)}")
         
         # Log the raw response for debugging (first 500 chars)
-        logger.info(f"🔍 Raw response content:\n{response_text[:500]}...")
+        logger.info(f" Raw response content:\n{response_text[:500]}...")
         
         # Return enhanced fallback structure
-        logger.warning("⚠️ Returning fallback JSON structure")
+        logger.warning(" Returning fallback JSON structure")
         return {
             "Name": f"Parse_Failed_{filename}",
             "Phone": "",
@@ -646,7 +646,7 @@ def process_resume_batch(uploaded_files, client, seed=None):
     successful_resumes = []
     failed_count = 0
     
-    logger.info(f"\n🚀 Starting batch processing of {len(uploaded_files)} files with seed: {seed}")
+    logger.info(f"\n Starting batch processing of {len(uploaded_files)} files with seed: {seed}")
     logger.info("=" * 80)
     
     # Create progress bar
@@ -654,13 +654,13 @@ def process_resume_batch(uploaded_files, client, seed=None):
     status_text = st.empty()
     
     for i, uploaded_file in enumerate(uploaded_files):
-        logger.info(f"\n📁 Processing file {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
+        logger.info(f"\n Processing file {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
         status_text.text(f"Extracting data from {uploaded_file.name}...")
         progress_bar.progress((i + 1) / len(uploaded_files))
         
         try:
             # Extract text from file
-            logger.info("📄 Starting text extraction...")
+            logger.info(" Starting text extraction...")
             text = extract_text_from_file(uploaded_file)
             
             if not text.strip():
@@ -668,35 +668,35 @@ def process_resume_batch(uploaded_files, client, seed=None):
                 failed_count += 1
                 continue
             
-            logger.info(f"✅ Text extraction successful. Length: {len(text)} characters")
+            logger.info(f" Text extraction successful. Length: {len(text)} characters")
             
             # Extract experience from filename if available
             experience = extract_experience_from_filename(uploaded_file.name)
             if experience:
-                logger.info(f"📅 Experience from filename: {experience}")
+                logger.info(f" Experience from filename: {experience}")
             
             # Generate prompt
-            logger.info("🔧 Generating extraction prompt...")
+            logger.info(" Generating extraction prompt...")
             prompt = get_resume_extraction_prompt(text, experience)
             
             # Call Claude API with seed for consistency
-            logger.info("🤖 Calling Claude API for data extraction...")
+            logger.info(" Calling Claude API for data extraction...")
             response = call_claude_api(client, prompt, seed=seed)
             
             if not response:
-                logger.error(f"❌ Claude API call failed for {uploaded_file.name}")
+                logger.error(f" Claude API call failed for {uploaded_file.name}")
                 failed_count += 1
                 continue
             
-            logger.info("✅ Claude API response received")
+            logger.info("Claude API response received")
             
             # Parse JSON response
-            logger.info("📝 Parsing JSON response...")
+            logger.info(" Parsing JSON response...")
             candidate_data = parse_json_response(response, uploaded_file.name)
             
             # Validate and clean the extracted data
             if not candidate_data.get("Name") or candidate_data.get("Name").startswith("Parse_Failed_"):
-                logger.warning(f"⚠️ Parsing issues detected for {uploaded_file.name}, but continuing with available data")
+                logger.warning(f" Parsing issues detected for {uploaded_file.name}, but continuing with available data")
             
             # Add metadata
             candidate_data["Source_File"] = uploaded_file.name
@@ -714,23 +714,23 @@ def process_resume_batch(uploaded_files, client, seed=None):
             logger.info("=" * 60)
             
             successful_resumes.append(candidate_data)
-            logger.info(f"✅ Successfully processed {uploaded_file.name}")
+            logger.info(f"Successfully processed {uploaded_file.name}")
             
         except Exception as e:
-            logger.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
-            logger.error(f"📍 Traceback: {traceback.format_exc()}")
+            logger.error(f" Error processing {uploaded_file.name}: {str(e)}")
+            logger.error(f" Traceback: {traceback.format_exc()}")
             failed_count += 1
             
             # Show error in UI but continue processing
-            st.error(f"⚠️ Failed to process {uploaded_file.name}: {str(e)}")
+            st.error(f" Failed to process {uploaded_file.name}: {str(e)}")
     
     # Update session state
     st.session_state.successful_count = len(successful_resumes)
     st.session_state.failed_count = failed_count
     
-    logger.info(f"\n🎉 Batch processing completed!")
-    logger.info(f"✅ Successful: {len(successful_resumes)}")
-    logger.info(f"❌ Failed: {failed_count}")
+    logger.info(f"\nBatch processing completed!")
+    logger.info(f" Successful: {len(successful_resumes)}")
+    logger.info(f" Failed: {failed_count}")
     
     status_text.text("Data extraction completed!")
     return successful_resumes
@@ -749,13 +749,13 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
     batch_status = st.empty()
     
     for batch_idx, batch in enumerate(batches):
-        logger.info(f"\n📊 Processing batch {batch_idx + 1}/{total_batches}")
+        logger.info(f"\n Processing batch {batch_idx + 1}/{total_batches}")
         batch_status.text(f"Analyzing batch {batch_idx + 1} of {total_batches} against job requirements...")
         batch_progress.progress((batch_idx + 1) / total_batches)
         
         for candidate in batch:
             candidate_name = candidate.get('Name', 'Unknown')
-            logger.info(f"🔍 Scoring candidate: {candidate_name}")
+            logger.info(f" Scoring candidate: {candidate_name}")
             
             try:
                 prompt = get_candidate_scoring_prompt(job_description, candidate, weights, additional_preferences)
@@ -779,19 +779,19 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
                         }
                         
                         scored_candidates.append(candidate_record)
-                        logger.info(f"✅ Scored {candidate_name}: {candidate_record['overall_score']:.1f}%")
+                        logger.info(f" Scored {candidate_name}: {candidate_record['overall_score']:.1f}%")
                     else:
-                        logger.warning(f"⚠️ Invalid response structure for {candidate_name}, using fallback")
+                        logger.warning(f" Invalid response structure for {candidate_name}, using fallback")
                         scored_candidates.append(create_fallback_score(candidate, seed))
                 else:
-                    logger.error(f"❌ No API response for {candidate_name}, using fallback")
+                    logger.error(f" No API response for {candidate_name}, using fallback")
                     scored_candidates.append(create_fallback_score(candidate, seed))
                     
             except Exception as e:
-                logger.error(f"❌ Error scoring {candidate_name}: {str(e)}")
+                logger.error(f" Error scoring {candidate_name}: {str(e)}")
                 scored_candidates.append(create_fallback_score(candidate, seed))
                 # Show error in UI but continue processing
-                st.warning(f"⚠️ Failed to score {candidate_name}: {str(e)}")
+                st.warning(f" Failed to score {candidate_name}: {str(e)}")
         
         # Longer delay between batches to avoid rate limiting
         if batch_idx < total_batches - 1:  # Don't delay after the last batch
@@ -802,7 +802,7 @@ def score_candidates_in_batches(candidates, job_description, client, weights, ad
     # Sort by score
     scored_candidates.sort(key=lambda x: x['overall_score'], reverse=True)
     if scored_candidates:
-        logger.info(f"🏆 Scoring completed. Top candidate: {scored_candidates[0]['candidate_data'].get('Name', 'Unknown')} ({scored_candidates[0]['overall_score']:.1f}%)")
+        logger.info(f" Scoring completed. Top candidate: {scored_candidates[0]['candidate_data'].get('Name', 'Unknown')} ({scored_candidates[0]['overall_score']:.1f}%)")
     
     return scored_candidates
 
@@ -1083,7 +1083,7 @@ def check_password():
             help="Use: smartworks_admin, client_manager, operations, or ansh.arora1@sworks.co.in"
         )
         st.text_input(
-            "🔑 Password", 
+            "Password", 
             type="password", 
             key="password",
             placeholder="Enter your password"
@@ -1095,7 +1095,7 @@ def check_password():
         # Show error message ONLY if login was attempted and failed
         if (st.session_state.get("login_attempted", False) and 
             not st.session_state.get("password_correct", False)):
-            st.error("❌ Invalid username or password")
+            st.error(" Invalid username or password")
         
         # Add some styling
         st.markdown("""
@@ -1239,7 +1239,7 @@ def configure_scoring_weights():
                 st.info(f"📜 {norm_cert:.0f}%")
             
             # Apply button
-            if st.button("✅ Apply New Weights", type="primary", use_container_width=True):
+            if st.button("Apply New Weights", type="primary", use_container_width=True):
                 # Normalize and apply weights
                 st.session_state.weights = {
                     "experience": exp_weight / total,
@@ -1247,9 +1247,9 @@ def configure_scoring_weights():
                     "education": edu_weight / total,
                     "certification": cert_weight / total
                 }
-                st.success(f"✅ Weights updated! Experience: {norm_exp:.0f}%, Skills: {norm_skills:.0f}%, Education: {norm_edu:.0f}%, Certifications: {norm_cert:.0f}%")
+                st.success(f" Weights updated! Experience: {norm_exp:.0f}%, Skills: {norm_skills:.0f}%, Education: {norm_edu:.0f}%, Certifications: {norm_cert:.0f}%")
         else:
-            st.warning("⚠️ Please set at least one weight above 0")
+            st.warning(" Please set at least one weight above 0")
         
         st.markdown("---")
         st.info("💡 **How it works:** Set your desired percentages above, then click 'Apply New Weights'. The system will automatically balance them to total 100%.")
@@ -1488,7 +1488,7 @@ def main():
                 st.info(f"🎯 **Consistency Mode Available**: Same job description detected. Using seed: {st.session_state.processing_seed}")
                 st.markdown("*This will process with the same parameters to test result consistency*")
             else:
-                st.info("🆕 **New Processing**: This will generate a new processing seed for consistent results")
+                print("🆕 **New Processing**: This will generate a new processing seed for consistent results")
             
             # Process button with enhanced styling
             st.markdown("---")
@@ -1507,8 +1507,7 @@ def main():
                             processing_seed = generate_processing_seed(job_description, st.session_state.weights)
                             st.session_state.processing_seed = processing_seed
                             st.session_state.current_job_description = job_description
-                            st.info(f"🆕 **New Processing**: Generated seed {processing_seed}")
-                        
+                            
                         # Clear previous results
                         st.session_state.processing_complete = False
                         
@@ -1708,17 +1707,17 @@ def main():
                                 logger.error(f"Error creating JSON download: {e}")
                                 st.error("Error creating JSON file")
                     else:
-                        st.error("❌ Error processing candidate data")
+                        st.error("Error processing candidate data")
                 else:
-                    st.info("📝 No candidate data available. Please process some resumes first in the 'Upload & Process' tab.")
+                    st.info(" No candidate data available. Please process some resumes first in the 'Upload & Process' tab.")
             
             except Exception as e:
                 logger.error(f"Error in candidate details tab: {e}")
-                st.error(f"❌ Error displaying candidate details: {e}")
+                st.error(f"Error displaying candidate details: {e}")
         
         with tab3:
             try:
-                st.markdown("### 🏆 AI-Ranked Top Candidates")
+                st.markdown("### AI-Ranked Top Candidates")
                 
                 if st.session_state.top_candidates:
                     # Overall statistics
@@ -2017,18 +2016,18 @@ def main():
            
             except Exception as e:
                 logger.error(f"Error in shortlisted candidates tab: {e}")
-                st.error(f"❌ Error displaying shortlisted candidates: {e}")
-                st.info("💡 The application will continue running. Please try refreshing or contact support.")
+                st.error(f" Error displaying shortlisted candidates: {e}")
+                st.info(" The application will continue running. Please try refreshing or contact support.")
 
     except Exception as e:
         logger.error(f"Critical error in main function: {e}")
-        st.error(f"❌ Application error: {e}")
-        st.info("💡 The application encountered an error but will continue running. Please try refreshing the page.")
+        st.error(f"Application error: {e}")
+        st.info(" The application encountered an error but will continue running. Please try refreshing the page.")
 
 if __name__ == "__main__":
    try:
        main()
    except Exception as e:
        logger.error(f"Critical startup error: {e}")
-       st.error("❌ Failed to start the application. Please check your configuration and try again.")
-       st.info("💡 Check that all required dependencies are installed and API keys are configured.")
+       st.error(" Failed to start the application. Please check your configuration and try again.")
+       st.info("` Check that all required dependencies are installed and API keys are configured.")
